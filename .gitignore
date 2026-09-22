@@ -1,1 +1,1 @@
-Nothing should be ignored based on the provided file changes. The only modified file is a source code file (`Lua51Net/VM/LuaVM.cs`), which should not be added to .gitignore.
+(test_base_functions.lua is a source file, and the other changes are source/config files, so no build artifacts, dependencies, or temp files to ignore)
