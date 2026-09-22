@@ -192,7 +192,7 @@ namespace Lua51Net.VM.Libraries
                 values[i] = table[LuaValue.CreateNumber(i + 1)];
             }
             
-            // Сортировка
+            // Сортировка с использованием компаратора
             Array.Sort(values, (a, b) =>
             {
                 if (comp != null)
@@ -204,19 +204,29 @@ namespace Lua51Net.VM.Libraries
                     state.Call(2, 1);
                     bool result = state.ToBoolean(-1);
                     state.Pop();
-                    return result ? -1 : 1;
+                    
+                    // В Lua компаратор должен возвращать true если a < b
+                    // Если false, то a >= b
+                    return result ? -1 : (a.Equals(b) ? 0 : 1);
                 }
                 else
                 {
-                    // Сравнение по умолчанию
+                    // Сравнение по умолчанию (как в Lua 5.1)
                     if (a.Type == LuaType.LUA_TNUMBER && b.Type == LuaType.LUA_TNUMBER)
                     {
                         double na = a.ToNumber();
                         double nb = b.ToNumber();
                         return na.CompareTo(nb);
                     }
+                    else if (a.Type == LuaType.LUA_TSTRING && b.Type == LuaType.LUA_TSTRING)
+                    {
+                        string sa = a.ToStringValue();
+                        string sb = b.ToStringValue();
+                        return string.Compare(sa, sb, StringComparison.Ordinal);
+                    }
                     else
                     {
+                        // Разные типы - сравниваем по строковому представлению
                         string sa = a.ToStringValue();
                         string sb = b.ToStringValue();
                         return string.Compare(sa, sb, StringComparison.Ordinal);

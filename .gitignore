@@ -1,1 +1,48 @@
-(test_base_functions.lua is a source file, and the other changes are source/config files, so no build artifacts, dependencies, or temp files to ignore)
+```
+# Compiled and build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+obj/
+
+# Dependencies
+packages/
+lib/
+bin/
+obj/
+*.userprefs
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+Debug/
+Release/
+x64/
+bin/
+obj/
+out/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+```
