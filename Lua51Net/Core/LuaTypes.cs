@@ -59,13 +59,22 @@ namespace Lua51Net.Core
         public double ToNumber()
         {
             if (Type == LuaType.LUA_TNUMBER) return (double)Value;
-            if (Type == LuaType.LUA_TSTRING && double.TryParse((string)Value, out var num))
-                return num;
+            if (Type == LuaType.LUA_TSTRING)
+            {
+                string s = (string)Value;
+                // Пытаемся распарсить число из строки
+                if (double.TryParse(s, System.Globalization.NumberStyles.Any, 
+                    System.Globalization.CultureInfo.InvariantCulture, out var num))
+                    return num;
+            }
             return 0;
         }
 
         public string ToStringValue()
         {
+            if (Type == LuaType.LUA_TNIL) return "nil";
+            if (Type == LuaType.LUA_TNUMBER) return ((double)Value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (Type == LuaType.LUA_TBOOLEAN) return ((bool)Value) ? "true" : "false";
             return Value?.ToString() ?? "nil";
         }
 
@@ -157,21 +166,23 @@ namespace Lua51Net.Core
 
         /// <summary>
         /// Индексатор для доступа к элементам таблицы
-        /// Реализует доступ к array part для положительных целых ключей
+        /// Реализует доступ к array part для положительных целых ключей (1-based)
+        /// Отрицательные индексы не поддерживаются для таблиц согласно Lua 5.1 spec
         /// </summary>
         public LuaValue this[LuaValue key]
         {
             get
             {
-                // Проверка array part для положительных целых чисел
+                // Проверка array part для положительных целых чисел (1-based indexing)
                 if (key.Type == LuaType.LUA_TNUMBER)
                 {
                     double num = key.ToNumber();
-                    if (num >= 1 && num <= _array.Count && num == (int)num)
+                    // Array part использует только положительные целые числа >= 1
+                    if (num >= 1 && num <= _array.Count && num == Math.Floor(num))
                         return _array[(int)num - 1];
                 }
                 
-                // Поиск в hash part
+                // Поиск в hash part (поддерживает любые ключи, включая отрицательные числа)
                 if (_map.TryGetValue(key, out var value))
                     return value;
                 
@@ -195,11 +206,12 @@ namespace Lua51Net.Core
             }
             set
             {
-                // Запись в array part для положительных целых чисел
+                // Запись в array part для положительных целых чисел (1-based)
                 if (key.Type == LuaType.LUA_TNUMBER)
                 {
                     double num = key.ToNumber();
-                    if (num >= 1 && num == (int)num)
+                    // Array part использует только положительные целые числа >= 1
+                    if (num >= 1 && num == Math.Floor(num))
                     {
                         int index = (int)num;
                         if (index <= _array.Count)
@@ -214,7 +226,7 @@ namespace Lua51Net.Core
                     }
                 }
                 
-                // Запись в hash part
+                // Запись в hash part (для отрицательных индексов и других ключей)
                 _map[key] = value;
             }
         }
@@ -227,7 +239,8 @@ namespace Lua51Net.Core
             if (key.Type == LuaType.LUA_TNUMBER)
             {
                 double num = key.ToNumber();
-                if (num >= 1 && num <= _array.Count && num == (int)num)
+                // Array part использует только положительные целые числа >= 1
+                if (num >= 1 && num <= _array.Count && num == Math.Floor(num))
                     return _array[(int)num - 1];
             }
             
@@ -245,7 +258,8 @@ namespace Lua51Net.Core
             if (key.Type == LuaType.LUA_TNUMBER)
             {
                 double num = key.ToNumber();
-                if (num >= 1 && num == (int)num)
+                // Array part использует только положительные целые числа >= 1
+                if (num >= 1 && num == Math.Floor(num))
                 {
                     int index = (int)num;
                     if (index <= _array.Count)
@@ -364,7 +378,8 @@ namespace Lua51Net.Core
             if (key.Type == LuaType.LUA_TNUMBER)
             {
                 double num = key.ToNumber();
-                if (num >= 1 && num <= _array.Count && num == (int)num)
+                // Array part использует только положительные целые числа >= 1
+                if (num >= 1 && num <= _array.Count && num == Math.Floor(num))
                     return _array[(int)num - 1].Type != LuaType.LUA_TNIL;
             }
             return _map.ContainsKey(key);

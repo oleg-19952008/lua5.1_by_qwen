@@ -372,12 +372,32 @@ namespace Lua51Net.VM
 
         public void RawGet(int index)
         {
-            GetTable(index);
+            LuaValue key = Pop();
+            LuaValue table = Get(index);
+            
+            if (table.Type != LuaType.LUA_TTABLE)
+            {
+                PushNil();
+                return;
+            }
+
+            LuaTable t = (LuaTable)table.Value;
+            // Используем RawGet для получения значения без учета метатаблицы
+            Push(t.RawGet(key));
         }
 
         public void RawSet(int index)
         {
-            SetTable(index);
+            LuaValue value = Pop();
+            LuaValue key = Pop();
+            LuaValue table = Get(index);
+
+            if (table.Type != LuaType.LUA_TTABLE)
+                return;
+
+            LuaTable t = (LuaTable)table.Value;
+            // Используем RawSet для записи без вызова метаметодов
+            t.RawSet(key, value);
         }
 
         public int RawLen(int index)
@@ -730,7 +750,8 @@ namespace Lua51Net.VM
             }
 
             LuaTable tbl = (LuaTable)table.Value;
-            Push(tbl[LuaValue.CreateNumber(n)]);
+            // Используем RawGet для прямого доступа без метатаблицы
+            Push(tbl.RawGet(LuaValue.CreateNumber(n)));
         }
 
         public void RawSetI(int t, int n)
@@ -742,7 +763,8 @@ namespace Lua51Net.VM
                 return;
 
             LuaTable tbl = (LuaTable)table.Value;
-            tbl[LuaValue.CreateNumber(n)] = value;
+            // Используем RawSet для прямой записи без метаметодов
+            tbl.RawSet(LuaValue.CreateNumber(n), value);
         }
 
         #endregion
