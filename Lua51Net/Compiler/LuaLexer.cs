@@ -74,6 +74,13 @@ namespace Lua51Net.Compiler
                     case "..": Advance(2); return new Token(TokenType.CONCAT, "..", _line, _column);
                 }
             }
+            
+            // Трехсимвольные операторы (...)
+            if (_pos + 2 < _source.Length && _source.Substring(_pos, 3) == "...")
+            {
+                Advance(3);
+                return new Token(TokenType.DOTS, "...", _line, _column);
+            }
 
             // Односимвольные токены
             switch (c)

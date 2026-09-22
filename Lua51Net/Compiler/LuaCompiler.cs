@@ -290,6 +290,8 @@ namespace Lua51Net.Compiler
             Expect(TokenType.LPAREN);
             
             var parameters = new List<string>();
+            bool isVarArg = false;
+            
             if (isMethod)
                 parameters.Add("self");
             
@@ -306,7 +308,7 @@ namespace Lua51Net.Compiler
                 }
                 else if (_current.Type == TokenType.DOTS)
                 {
-                    // Vararg
+                    isVarArg = true;
                     NextToken();
                     break;
                 }
@@ -508,23 +510,61 @@ namespace Lua51Net.Compiler
         {
             Expect(TokenType.LBRACE);
             
-            Emit(Instruction.Create(OpCode.OP_NEWTABLE, 0, 0, 0));
+            // Создаем новую таблицу
+            int tableReg = 0; // Регистр для таблицы
+            Emit(Instruction.Create(OpCode.OP_NEWTABLE, tableReg, 0, 0));
+            
+            int arraySize = 0;
+            int hashSize = 0;
+            bool lastWasArray = false;
             
             while (_current.Type != TokenType.RBRACE && _current.Type != TokenType.EOS)
             {
-                if (_current.Type == TokenType.IDENTIFIER || _current.Type == TokenType.STRING)
+                // Проверяем тип поля: [key] = value, name = value, или value
+                if (_current.Type == TokenType.LBRACKET)
                 {
-                    // Key-value pair
-                    ParseExpression(); // Key
+                    // [expr] = value
+                    NextToken();
+                    ParseExpression(); // Ключ
+                    Expect(TokenType.RBRACKET);
                     Expect(TokenType.ASSIGN);
-                    ParseExpression(); // Value
-                    Emit(Instruction.Create(OpCode.OP_SETTABLE, 0, 0, 0));
+                    ParseExpression(); // Значение
+                    Emit(Instruction.Create(OpCode.OP_SETTABLE, tableReg, 0, 0));
+                    hashSize++;
+                    lastWasArray = false;
+                }
+                else if (_current.Type == TokenType.IDENTIFIER)
+                {
+                    string name = ((Token)_current).Value.ToString();
+                    NextToken();
+                    
+                    if (Match(TokenType.ASSIGN))
+                    {
+                        // name = value (именованное поле)
+                        int keyConstIdx = AddConstant(LuaValue.CreateString(name));
+                        Emit(Instruction.CreateABx(OpCode.OP_LOADK, tableReg + 1, keyConstIdx));
+                        ParseExpression(); // Значение
+                        Emit(Instruction.Create(OpCode.OP_SETTABLE, tableReg, tableReg + 1, 0));
+                        hashSize++;
+                        lastWasArray = false;
+                    }
+                    else
+                    {
+                        // Array элемент с идентификатором как значением
+                        int identConstIdx = AddConstant(LuaValue.CreateString(name));
+                        Emit(Instruction.CreateABx(OpCode.OP_LOADK, tableReg + 1, identConstIdx));
+                        Emit(Instruction.CreateABC(OpCode.OP_SETTABLE, tableReg, 0, tableReg + 1));
+                        arraySize++;
+                        lastWasArray = true;
+                    }
                 }
                 else
                 {
-                    // Array element
+                    // Array элемент
                     ParseExpression();
-                    Emit(Instruction.Create(OpCode.OP_SETTABLE, 0, 0, 0));
+                    Emit(Instruction.Create(OpCode.OP_SETTABLE, tableReg, 0, 0));
+                    arraySize++;
+                    lastWasArray = true;
                 }
                 
                 if (Match(TokenType.COMMA) || Match(TokenType.SEMICOLON))
@@ -541,6 +581,8 @@ namespace Lua51Net.Compiler
             Expect(TokenType.LPAREN);
             
             var parameters = new List<string>();
+            bool isVarArg = false;
+            
             while (_current.Type != TokenType.RPAREN && _current.Type != TokenType.EOS)
             {
                 if (_current.Type == TokenType.IDENTIFIER)
@@ -551,6 +593,12 @@ namespace Lua51Net.Compiler
                 else if (_current.Type == TokenType.COMMA)
                 {
                     NextToken();
+                }
+                else if (_current.Type == TokenType.DOTS)
+                {
+                    isVarArg = true;
+                    NextToken();
+                    break;
                 }
                 else
                 {
@@ -563,9 +611,11 @@ namespace Lua51Net.Compiler
             // Сохраняем текущее состояние и создаем новую функцию
             var savedInstructions = _instructions;
             var savedConstants = _constants;
+            var savedFunctions = _functions;
             
             _instructions = new List<Instruction>();
             _constants = new List<LuaValue>();
+            _functions = new List<LuaFunction>();
             
             ParseBlock();
             Expect(TokenType.END);
@@ -578,6 +628,7 @@ namespace Lua51Net.Compiler
                 Constants = _constants.ToArray(),
                 Functions = new LuaFunction[0],
                 NumParameters = (byte)parameters.Count,
+                IsVarArg = (byte)(isVarArg ? 1 : 0),
                 MaxStackSize = 2
             };
             
@@ -589,9 +640,10 @@ namespace Lua51Net.Compiler
             
             _functions.Add(luaFunc);
             
-            // Восстанавливаем состояние
+            // Восстанавливаем состояние родительской функции
             _instructions = savedInstructions;
             _constants = savedConstants;
+            _functions = savedFunctions;
             
             int funcIdx = _functions.Count - 1;
             Emit(Instruction.CreateABx(OpCode.OP_CLOSURE, 0, funcIdx));
