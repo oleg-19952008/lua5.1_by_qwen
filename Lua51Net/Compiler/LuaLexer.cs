@@ -1,11 +1,11 @@
 using System;
-using System.IO;
+using System.Text;
 using Lua51Net.Core;
 
 namespace Lua51Net.Compiler
 {
     /// <summary>
-    /// Лексер для токенизации исходного кода Lua
+    /// Лексер для токенизации исходного кода Lua 5.1
     /// </summary>
     public class LuaLexer
     {
@@ -24,8 +24,7 @@ namespace Lua51Net.Compiler
 
         public Token NextToken()
         {
-            SkipWhitespace();
-            SkipComment();
+            SkipWhitespaceAndComments();
 
             if (_pos >= _source.Length)
                 return new Token(TokenType.EOS, null, _line, _column);
@@ -36,13 +35,31 @@ namespace Lua51Net.Compiler
             if (char.IsDigit(c) || (c == '.' && _pos + 1 < _source.Length && char.IsDigit(_source[_pos + 1])))
                 return ReadNumber();
 
-            // Идентификаторы и ключевые слова
-            if (char.IsLetter(c) || c == '_')
+            // Идентификаторы и ключевые слова (с поддержкой UTF-8)
+            if (char.IsLetter(c) || c == '_' || IsUtf8Letter(c))
                 return ReadIdentifier();
 
-            // Строки
+            // Строки (обычные и длинные)
             if (c == '"' || c == '\'')
                 return ReadString();
+            
+            // Длинные строки и комментарии [[ ... ]]
+            if (c == '[')
+            {
+                int lookahead = _pos + 1;
+                int level = 0;
+                
+                // Проверка на длинную конструкцию [=*[
+                while (lookahead < _source.Length && _source[lookahead] == '=')
+                    lookahead++;
+                
+                if (lookahead < _source.Length && _source[lookahead] == '[')
+                {
+                    // Это длинная конструкция, вычисляем уровень
+                    level = lookahead - _pos - 1;
+                    return ReadLongString(level);
+                }
+            }
 
             // Двухсимвольные операторы
             if (_pos + 1 < _source.Length)
@@ -55,7 +72,6 @@ namespace Lua51Net.Compiler
                     case "<=": Advance(2); return new Token(TokenType.LE, "<=", _line, _column);
                     case ">=": Advance(2); return new Token(TokenType.GE, ">=", _line, _column);
                     case "..": Advance(2); return new Token(TokenType.CONCAT, "..", _line, _column);
-                    case "::": Advance(2); return new Token(TokenType.LABEL, "::", _line, _column);
                 }
             }
 
@@ -93,10 +109,32 @@ namespace Lua51Net.Compiler
             int startLine = _line;
             int startCol = _column;
 
-            while (_pos < _source.Length && (char.IsDigit(CurrentChar) || CurrentChar == '.' || 
-                   CurrentChar == 'e' || CurrentChar == 'E' || CurrentChar == '+' || CurrentChar == '-'))
+            // Hexadecimal numbers: 0x...
+            if (_pos + 1 < _source.Length && CurrentChar == '0' && (CurrentChar == 'x' || CurrentChar == 'X'))
             {
-                Advance();
+                Advance(2);
+                while (_pos < _source.Length && (char.IsDigit(CurrentChar) || 
+                    (CurrentChar >= 'a' && CurrentChar <= 'f') || (CurrentChar >= 'A' && CurrentChar <= 'F')))
+                {
+                    Advance();
+                }
+            }
+            else
+            {
+                while (_pos < _source.Length && (char.IsDigit(CurrentChar) || CurrentChar == '.'))
+                {
+                    Advance();
+                }
+                
+                // Exponent part
+                if (_pos < _source.Length && (CurrentChar == 'e' || CurrentChar == 'E'))
+                {
+                    Advance();
+                    if (_pos < _source.Length && (CurrentChar == '+' || CurrentChar == '-'))
+                        Advance();
+                    while (_pos < _source.Length && char.IsDigit(CurrentChar))
+                        Advance();
+                }
             }
 
             string numStr = _source.Substring(start, _pos - start);
@@ -159,6 +197,8 @@ namespace Lua51Net.Compiler
             int start = _pos;
             int startLine = _line;
             int startCol = _column;
+            
+            StringBuilder sb = new StringBuilder();
 
             while (_pos < _source.Length && CurrentChar != quote)
             {
@@ -170,14 +210,52 @@ namespace Lua51Net.Compiler
                         char escaped = CurrentChar;
                         switch (escaped)
                         {
-                            case 'n': CurrentChar = '\n'; break;
-                            case 't': CurrentChar = '\t'; break;
-                            case 'r': CurrentChar = '\r'; break;
-                            case '\\': break;
-                            case '"': break;
-                            case '\'': break;
+                            case 'n': sb.Append('\n'); Advance(); break;
+                            case 't': sb.Append('\t'); Advance(); break;
+                            case 'r': sb.Append('\r'); Advance(); break;
+                            case '\\': sb.Append('\\'); Advance(); break;
+                            case '"': sb.Append('"'); Advance(); break;
+                            case '\'': sb.Append('\''); Advance(); break;
+                            case 'a': sb.Append('\a'); Advance(); break;
+                            case 'b': sb.Append('\b'); Advance(); break;
+                            case 'f': sb.Append('\f'); Advance(); break;
+                            case 'v': sb.Append('\v'); Advance(); break;
+                            case 'z': // Skip whitespace after \z
+                                Advance();
+                                while (_pos < _source.Length && char.IsWhiteSpace(CurrentChar))
+                                    Advance();
+                                break;
+                            case '\n': // Line continuation
+                                _line++;
+                                _column = 0;
+                                Advance();
+                                break;
+                            default:
+                                // Decimal escape: \ddd (up to 3 digits, max 255)
+                                if (char.IsDigit(escaped))
+                                {
+                                    int numDigits = 1;
+                                    int digitValue = escaped - '0';
+                                    Advance();
+                                    
+                                    while (numDigits < 3 && _pos < _source.Length && char.IsDigit(CurrentChar))
+                                    {
+                                        int nextDigit = CurrentChar - '0';
+                                        int newValue = digitValue * 10 + nextDigit;
+                                        if (newValue > 255) break;
+                                        digitValue = newValue;
+                                        numDigits++;
+                                        Advance();
+                                    }
+                                    sb.Append((char)digitValue);
+                                }
+                                else
+                                {
+                                    sb.Append(escaped);
+                                    Advance();
+                                }
+                                break;
                         }
-                        Advance();
                     }
                 }
                 else
@@ -187,6 +265,7 @@ namespace Lua51Net.Compiler
                         _line++;
                         _column = 0;
                     }
+                    sb.Append(CurrentChar);
                     Advance();
                 }
             }
@@ -196,87 +275,183 @@ namespace Lua51Net.Compiler
 
             Advance(); // Закрывающая кавычка
 
-            string str = _source.Substring(start, _pos - start - 1);
-            return new Token(TokenType.STRING, str, startLine, startCol);
+            return new Token(TokenType.STRING, sb.ToString(), startLine, startCol);
         }
 
-        private void SkipWhitespace()
+        private void SkipWhitespaceAndComments()
         {
-            while (_pos < _source.Length && char.IsWhiteSpace(CurrentChar))
+            while (_pos < _source.Length)
             {
-                if (CurrentChar == '\n')
+                // Skip whitespace
+                while (_pos < _source.Length && char.IsWhiteSpace(CurrentChar))
                 {
-                    _line++;
-                    _column = 0;
+                    if (CurrentChar == '\n')
+                    {
+                        _line++;
+                        _column = 0;
+                    }
+                    else
+                    {
+                        _column++;
+                    }
+                    Advance();
+                }
+                
+                // Check for comment
+                if (_pos + 1 < _source.Length && CurrentChar == '-' && _source[_pos + 1] == '-')
+                {
+                    SkipComment();
                 }
                 else
                 {
-                    _column++;
+                    break;
                 }
-                Advance();
             }
         }
 
         private void SkipComment()
         {
-            if (_pos + 1 < _source.Length && CurrentChar == '-' && _source[_pos + 1] == '-')
+            // We're already at '--'
+            Advance(2);
+            
+            // Check for long comment --[=[ ... ]=]
+            if (_pos < _source.Length && CurrentChar == '[')
             {
-                Advance(2);
+                int lookahead = _pos + 1;
+                int level = 0;
                 
-                // Многострочный комментарий
-                if (_pos < _source.Length && CurrentChar == '[')
+                // Count '=' characters
+                while (lookahead < _source.Length && _source[lookahead] == '=')
+                    lookahead++;
+                
+                // Check for closing '['
+                if (lookahead < _source.Length && _source[lookahead] == '[')
                 {
-                    Advance();
-                    int level = 0;
-                    if (_pos < _source.Length && CurrentChar == '=')
+                    level = lookahead - _pos - 1;
+                    Advance(); // Skip opening '['
+                    
+                    // Skip any '=' after '['
+                    for (int i = 0; i < level; i++)
+                        Advance();
+                    Advance(); // Skip the final '['
+                    
+                    // Now skip until we find ]=...]= with matching level
+                    while (_pos < _source.Length)
                     {
-                        while (_pos < _source.Length && CurrentChar == '=')
-                        {
-                            level++;
-                            Advance();
-                        }
-                        if (_pos < _source.Length && CurrentChar == '[')
+                        if (CurrentChar == ']')
                         {
                             Advance();
-                            // Пропуск до ]=...]=
-                            while (_pos < _source.Length)
+                            int closeLevel = 0;
+                            while (_pos < _source.Length && CurrentChar == '=')
                             {
-                                if (CurrentChar == ']')
-                                {
-                                    int checkPos = _pos;
-                                    Advance();
-                                    int closeLevel = 0;
-                                    while (_pos < _source.Length && CurrentChar == '=')
-                                    {
-                                        closeLevel++;
-                                        Advance();
-                                    }
-                                    if (closeLevel == level && _pos < _source.Length && CurrentChar == ']')
-                                    {
-                                        Advance();
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    if (CurrentChar == '\n')
-                                    {
-                                        _line++;
-                                        _column = 0;
-                                    }
-                                    Advance();
-                                }
+                                closeLevel++;
+                                Advance();
+                            }
+                            if (closeLevel == level && _pos < _source.Length && CurrentChar == ']')
+                            {
+                                Advance();
+                                return;
                             }
                         }
+                        else
+                        {
+                            if (CurrentChar == '\n')
+                            {
+                                _line++;
+                                _column = 0;
+                            }
+                            Advance();
+                        }
                     }
-                }
-                
-                // Однострочный комментарий
-                while (_pos < _source.Length && CurrentChar != '\n')
-                {
-                    Advance();
+                    return;
                 }
             }
+            
+            // Single-line comment: skip until end of line
+            while (_pos < _source.Length && CurrentChar != '\n')
+            {
+                Advance();
+            }
+        }
+
+        private Token ReadLongString(int level)
+        {
+            int startLine = _line;
+            int startCol = _column;
+            
+            // Skip opening [ and =s and [
+            Advance(); // Skip '['
+            for (int i = 0; i < level; i++)
+                Advance(); // Skip '='s
+            Advance(); // Skip final '['
+            
+            // Optional newline right after opening bracket should be skipped
+            if (_pos < _source.Length && CurrentChar == '\n')
+            {
+                _line++;
+                _column = 0;
+                Advance();
+            }
+            
+            StringBuilder sb = new StringBuilder();
+            string closingBracket = "]" + new string('=', level) + "]";
+            
+            while (_pos < _source.Length)
+            {
+                // Check for closing bracket
+                bool foundClosing = true;
+                int checkPos = _pos;
+                
+                if (_source[checkPos] != ']')
+                    foundClosing = false;
+                else
+                {
+                    checkPos++;
+                    for (int i = 0; i < level && checkPos < _source.Length; i++)
+                    {
+                        if (_source[checkPos] != '=')
+                        {
+                            foundClosing = false;
+                            break;
+                        }
+                        checkPos++;
+                    }
+                    if (foundClosing && (checkPos >= _source.Length || _source[checkPos] != ']'))
+                        foundClosing = false;
+                }
+                
+                if (foundClosing)
+                {
+                    // Skip the closing bracket
+                    Advance(); // ']'
+                    for (int i = 0; i < level; i++)
+                        Advance(); // '='s
+                    Advance(); // final ']'
+                    return new Token(TokenType.STRING, sb.ToString(), startLine, startCol);
+                }
+                
+                if (CurrentChar == '\n')
+                {
+                    _line++;
+                    _column = 0;
+                }
+                sb.Append(CurrentChar);
+                Advance();
+            }
+            
+            throw new LuaException($"Unterminated long string starting at line {startLine}");
+        }
+
+        private bool IsUtf8Letter(char c)
+        {
+            // Check if character is a Unicode letter (for UTF-8 identifier support)
+            // In C#, char is UTF-16, but this handles basic multilingual plane
+            UnicodeCategory category = char.GetUnicodeCategory(c);
+            return category == UnicodeCategory.LowercaseLetter || 
+                   category == UnicodeCategory.UppercaseLetter || 
+                   category == UnicodeCategory.TitlecaseLetter || 
+                   category == UnicodeCategory.ModifierLetter || 
+                   category == UnicodeCategory.OtherLetter;
         }
 
         private char CurrentChar => _pos < _source.Length ? _source[_pos] : '\0';
