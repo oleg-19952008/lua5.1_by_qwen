@@ -167,10 +167,11 @@ namespace Lua51Net.Core
         public byte NumParameters;
         public byte IsVarArg;
         public byte MaxStackSize;
+        public byte NumUpvalues;
         
         public Instruction[] Code;
         public LuaValue[] Constants;
-        public Prototype[] Functions;
+        public LuaPrototype[] Functions;
         public int[] LineInfo;
         public LocVars[] LocVars;
         public string[] Upvalues;

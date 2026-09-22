@@ -360,9 +360,9 @@ namespace Lua51Net.VM
 
         private int ExecuteFunction(LuaFunction func, int nargs, int nresults)
         {
-            // Упрощенная реализация - полная будет в части 3
-            // Здесь должен быть запуск байт-кода
-            return 0;
+            // Создание VM для выполнения байт-кода
+            var vm = new LuaVM(this);
+            return vm.ExecuteFunction(func, nargs, nresults);
         }
 
         public int PCall(int nargs, int nresults, int errfunc)

@@ -32,22 +32,27 @@ namespace Lua51Net.VM
             PushCallFrame(func, nargs);
             
             var frame = CurrentFrame;
-            var pc = 0;
             var prototype = func.Prototype;
             var code = prototype.Code;
             var constants = prototype.Constants;
             var upvalues = func.Upvalues ?? new LuaValue[0];
 
-            // Инициализация параметров
+            // Инициализация параметров в регистрах
             for (int i = 0; i < nargs && i < prototype.NumParameters; i++)
             {
                 frame.Registers[i] = _state.Get(-(nargs - i));
             }
+            
+            // Очистка остальных регистров
+            for (int i = prototype.NumParameters; i < frame.Registers.Length; i++)
+            {
+                frame.Registers[i] = LuaValue.Nil;
+            }
 
             // Основной цикл выполнения
-            while (pc < code.Length)
+            while (frame.PC < code.Length)
             {
-                Instruction instr = code[pc];
+                Instruction instr = code[frame.PC];
                 OpCode op = instr.OpCode;
                 int a = instr.A;
                 int b = instr.B;
@@ -55,7 +60,7 @@ namespace Lua51Net.VM
                 int bx = instr.Bx;
                 int sbx = instr.Sbx;
 
-                pc++;
+                frame.PC++;
 
                 switch (op)
                 {
@@ -70,7 +75,7 @@ namespace Lua51Net.VM
                     case OpCode.OP_LOADBOOL:
                         frame.Registers[a] = LuaValue.CreateBoolean(b != 0);
                         if (c != 0)
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_LOADNIL:
@@ -221,7 +226,7 @@ namespace Lua51Net.VM
                         break;
 
                     case OpCode.OP_JMP:
-                        pc += sbx;
+                        frame.PC += sbx;
                         break;
 
                     case OpCode.OP_EQ:
@@ -229,7 +234,7 @@ namespace Lua51Net.VM
                         LuaValue eqB = GetRKValue(frame, c);
                         bool eqResult = eqA == eqB;
                         if ((b != 0) == eqResult)
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_LT:
@@ -237,7 +242,7 @@ namespace Lua51Net.VM
                         LuaValue ltB = GetRKValue(frame, c);
                         bool ltResult = ltA.ToNumber() < ltB.ToNumber();
                         if ((b != 0) == ltResult)
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_LE:
@@ -245,13 +250,13 @@ namespace Lua51Net.VM
                         LuaValue leB = GetRKValue(frame, c);
                         bool leResult = leA.ToNumber() <= leB.ToNumber();
                         if ((b != 0) == leResult)
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_TEST:
                         LuaValue testVal = frame.Registers[a];
                         if (testVal.ToBoolean() == (c != 0))
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_TESTSET:
@@ -259,7 +264,7 @@ namespace Lua51Net.VM
                         if (testSetVal.ToBoolean() == (c != 0))
                         {
                             frame.Registers[a] = testSetVal;
-                            pc++;
+                            frame.PC++;
                         }
                         break;
 
@@ -269,14 +274,14 @@ namespace Lua51Net.VM
                         
                         if (callNArgs < 0) callNArgs = _state.GetTop() - frame.Base - a - 1;
                         
-                        ExecuteCall(a, callNArgs, callNResults, ref pc);
+                        ExecuteCall(a, callNArgs, callNResults);
                         break;
 
                     case OpCode.OP_TAILCALL:
                         int tailNArgs = b - 1;
                         if (tailNArgs < 0) tailNArgs = _state.GetTop() - frame.Base - a - 1;
                         
-                        ExecuteTailCall(a, tailNArgs, ref pc);
+                        ExecuteTailCall(a, tailNArgs);
                         break;
 
                     case OpCode.OP_RETURN:
@@ -297,7 +302,7 @@ namespace Lua51Net.VM
                             (forStep < 0 && forIndex >= forLimit))
                         {
                             frame.Registers[a + 3] = LuaValue.CreateNumber(forIndex);
-                            pc += sbx;
+                            frame.PC += sbx;
                         }
                         break;
 
@@ -307,7 +312,7 @@ namespace Lua51Net.VM
                         double step = frame.Registers[a + 2].ToNumber();
                         
                         frame.Registers[a] = LuaValue.CreateNumber(init - step);
-                        pc += sbx;
+                        frame.PC += sbx;
                         break;
 
                     case OpCode.OP_TFORLOOP:
@@ -324,7 +329,7 @@ namespace Lua51Net.VM
                         frame.Registers[a + 2] = result;
                         
                         if (result.Type != LuaType.LUA_TNIL)
-                            pc++;
+                            frame.PC++;
                         break;
 
                     case OpCode.OP_SETLIST:
@@ -353,11 +358,11 @@ namespace Lua51Net.VM
 
                     case OpCode.OP_CLOSURE:
                         LuaFunction closure = prototype.Functions[bx];
-                        LuaValue[] newUpvalues = new LuaValue[closure.Prototype.NumUpvalues ?? 0];
+                        LuaValue[] newUpvalues = new LuaValue[closure.Prototype.NumUpvalues];
                         
                         for (int i = 0; i < newUpvalues.Length; i++)
                         {
-                            Instruction nextInstr = code[pc++];
+                            Instruction nextInstr = code[frame.PC++];
                             if (nextInstr.OpCode == OpCode.OP_MOVE)
                             {
                                 newUpvalues[i] = frame.Registers[nextInstr.A];
@@ -424,7 +429,7 @@ namespace Lua51Net.VM
             }
         }
 
-        private void ExecuteCall(int funcIndex, int nargs, int nresults, ref int pc)
+        private void ExecuteCall(int funcIndex, int nargs, int nresults)
         {
             LuaValue func = CurrentFrame.Registers[funcIndex];
             
@@ -456,7 +461,7 @@ namespace Lua51Net.VM
             }
         }
 
-        private void ExecuteTailCall(int funcIndex, int nargs, ref int pc)
+        private void ExecuteTailCall(int funcIndex, int nargs)
         {
             // Tail call оптимизация - заменяет текущий фрейм
             LuaValue func = CurrentFrame.Registers[funcIndex];
@@ -466,7 +471,7 @@ namespace Lua51Net.VM
 
             // Подготовка нового вызова
             PopCallFrame();
-            ExecuteCall(funcIndex, nargs, -1, ref pc);
+            ExecuteCall(funcIndex, nargs, -1);
         }
 
         private int DoReturn(int retBase, int retCount)
@@ -496,6 +501,8 @@ namespace Lua51Net.VM
         private void CloseUpvalues(int level)
         {
             // Закрытие upvalues на указанном уровне
+            // В Lua 5.1 upvalues закрываются при выходе из области видимости
+            // Здесь упрощенная реализация - в полной версии нужно отслеживать открытые upvalues
         }
 
         private void PushCallFrame(LuaFunction func, int nargs)
@@ -541,6 +548,7 @@ namespace Lua51Net.VM
             public int ReturnBase;
             public LuaValue[] VarArgs;
             public int VarArgCount;
+            public int PC;
         }
     }
 }
