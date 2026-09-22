@@ -95,17 +95,45 @@ namespace Lua51Net.VM
                         break;
 
                     case OpCode.OP_GETTABLE:
-                        LuaValue tableVal = GetRKValue(frame, b);
-                        LuaValue keyVal = GetRKValue(frame, c);
-                        
-                        if (tableVal.Type == LuaType.LUA_TTABLE)
                         {
-                            LuaTable table = (LuaTable)tableVal.Value;
-                            frame.Registers[a] = table[keyVal];
-                        }
-                        else
-                        {
-                            throw new LuaException("Attempt to index non-table");
+                            LuaValue tableVal = GetRKValue(frame, b);
+                            LuaValue keyVal = GetRKValue(frame, c);
+                            
+                            if (tableVal.Type == LuaType.LUA_TTABLE)
+                            {
+                                LuaTable table = (LuaTable)tableVal.Value;
+                                frame.Registers[a] = table[keyVal];
+                            }
+                            else
+                            {
+                                // Попытка индексировать не таблицу - проверяем метатаблицу
+                                LuaTable mt = _state.GetMetatableFromValue(tableVal);
+                                if (mt != null)
+                                {
+                                    LuaValue indexFunc = mt[LuaValue.CreateString("__index")];
+                                    if (indexFunc.Type == LuaType.LUA_TFUNCTION)
+                                    {
+                                        _state.Push(indexFunc);
+                                        _state.Push(tableVal);
+                                        _state.Push(keyVal);
+                                        _state.Call(2, 1);
+                                        frame.Registers[a] = _state.Pop();
+                                    }
+                                    else if (indexFunc.Type == LuaType.LUA_TTABLE)
+                                    {
+                                        LuaTable indexTable = (LuaTable)indexFunc.Value;
+                                        frame.Registers[a] = indexTable[keyVal];
+                                    }
+                                    else
+                                    {
+                                        throw new LuaException("Attempt to index non-table");
+                                    }
+                                }
+                                else
+                                {
+                                    throw new LuaException("Attempt to index non-table");
+                                }
+                            }
                         }
                         break;
 
@@ -275,26 +303,36 @@ namespace Lua51Net.VM
                         break;
 
                     case OpCode.OP_CALL:
-                        int callNArgs = b - 1;
-                        int callNResults = c - 1;
-                        
-                        if (callNArgs < 0) callNArgs = _state.GetTop() - frame.Base - a - 1;
-                        
-                        ExecuteCall(a, callNArgs, callNResults);
+                        {
+                            int callNArgs = b - 1;
+                            int callNResults = c - 1;
+                            
+                            // Если b == 0, количество аргументов определяется динамически
+                            if (b == 0)
+                                callNArgs = _state.GetTop() - frame.Base - a - 1;
+                            
+                            ExecuteCall(frame, a, callNArgs, callNResults);
+                        }
                         break;
 
                     case OpCode.OP_TAILCALL:
-                        int tailNArgs = b - 1;
-                        if (tailNArgs < 0) tailNArgs = _state.GetTop() - frame.Base - a - 1;
-                        
-                        ExecuteTailCall(a, tailNArgs);
+                        {
+                            int tailNArgs = b - 1;
+                            if (b == 0)
+                                tailNArgs = _state.GetTop() - frame.Base - a - 1;
+                            
+                            ExecuteTailCall(frame, a, tailNArgs);
+                        }
                         break;
 
                     case OpCode.OP_RETURN:
-                        int returnCount = b - 1;
-                        if (returnCount < 0) returnCount = _state.GetTop() - frame.Base - a;
-                        
-                        return DoReturn(a, returnCount);
+                        {
+                            int returnCount = b - 1;
+                            if (b == 0)
+                                returnCount = _state.GetTop() - frame.Base - a;
+                            
+                            return DoReturn(frame, a, returnCount);
+                        }
 
                     case OpCode.OP_FORLOOP:
                         double forIndex = frame.Registers[a].ToNumber();
@@ -322,38 +360,58 @@ namespace Lua51Net.VM
                         break;
 
                     case OpCode.OP_TFORLOOP:
-                        LuaValue iteratorFunc = frame.Registers[a];
-                        LuaValue iteratorState = frame.Registers[a + 1];
-                        LuaValue controlVar = frame.Registers[a + 2];
-                        
-                        _state.Push(iteratorFunc);
-                        _state.Push(iteratorState);
-                        _state.Push(controlVar);
-                        _state.Call(2, c);
-                        
-                        LuaValue result = _state.Pop();
-                        frame.Registers[a + 2] = result;
-                        
-                        if (result.Type != LuaType.LUA_TNIL)
-                            frame.PC++;
+                        {
+                            LuaValue iteratorFunc = frame.Registers[a];
+                            LuaValue iteratorState = frame.Registers[a + 1];
+                            LuaValue controlVar = frame.Registers[a + 2];
+                            
+                            // Сохраняем текущую позицию для возврата после вызова
+                            int savedPC = frame.PC;
+                            
+                            _state.Push(iteratorFunc);
+                            _state.Push(iteratorState);
+                            _state.Push(controlVar);
+                            _state.Call(2, c);
+                            
+                            // Получаем результаты со стека и размещаем в регистрах a+3..a+2+c
+                            for (int i = 0; i < c; i++)
+                            {
+                                frame.Registers[a + 3 + i] = _state.Pop();
+                            }
+                            
+                            // Проверяем первый результат (a+3) на nil
+                            if (frame.Registers[a + 3].Type != LuaType.LUA_TNIL)
+                            {
+                                frame.PC++; // Продолжаем цикл
+                            }
+                            else
+                            {
+                                frame.PC = savedPC; // Выход из цикла
+                            }
+                        }
                         break;
 
                     case OpCode.OP_SETLIST:
-                        int listTableIndex = a;
-                        int elementsPerBatch = c;
-                        int lastBatchIndex = bx;
-                        
-                        if (elementsPerBatch == 0)
-                            elementsPerBatch = _state.GetTop() - frame.Base - listTableIndex - 1;
-                        
-                        LuaTable listTable = (LuaTable)frame.Registers[listTableIndex].Value;
-                        int baseIdx = (lastBatchIndex - 1) * elementsPerBatch;
-                        
-                        for (int i = 1; i <= elementsPerBatch; i++)
                         {
-                            if (a + i < frame.Registers.Length)
+                            int listTableIndex = a;
+                            int elementsPerBatch = c;
+                            int lastBatchIndex = bx;
+                            
+                            if (elementsPerBatch == 0)
+                                elementsPerBatch = _state.GetTop() - frame.Base - listTableIndex - 1;
+                            
+                            if (lastBatchIndex == 0)
+                                lastBatchIndex = code[frame.PC++].Bx; // Следующая инструкция содержит индекс
+                            
+                            LuaTable listTable = (LuaTable)frame.Registers[listTableIndex].Value;
+                            int baseIdx = (lastBatchIndex - 1) * elementsPerBatch;
+                            
+                            for (int i = 1; i <= elementsPerBatch; i++)
                             {
-                                listTable[LuaValue.CreateNumber(baseIdx + i)] = frame.Registers[a + i];
+                                if (a + i < frame.Registers.Length)
+                                {
+                                    listTable[LuaValue.CreateNumber(baseIdx + i)] = frame.Registers[a + i];
+                                }
                             }
                         }
                         break;
@@ -363,29 +421,33 @@ namespace Lua51Net.VM
                         break;
 
                     case OpCode.OP_CLOSURE:
-                        LuaFunction closure = prototype.Functions[bx];
-                        LuaValue[] newUpvalues = new LuaValue[closure.Prototype.NumUpvalues];
-                        
-                        for (int i = 0; i < newUpvalues.Length; i++)
                         {
-                            Instruction nextInstr = code[frame.PC++];
-                            if (nextInstr.OpCode == OpCode.OP_MOVE)
+                            LuaFunction closure = prototype.Functions[bx];
+                            LuaValue[] newUpvalues = new LuaValue[closure.Prototype.NumUpvalues];
+                            
+                            for (int i = 0; i < newUpvalues.Length; i++)
                             {
-                                newUpvalues[i] = frame.Registers[nextInstr.A];
+                                Instruction nextInstr = code[frame.PC++];
+                                if (nextInstr.OpCode == OpCode.OP_MOVE)
+                                {
+                                    // Upvalue из локального регистра
+                                    newUpvalues[i] = frame.Registers[nextInstr.A];
+                                }
+                                else if (nextInstr.OpCode == OpCode.OP_GETUPVAL)
+                                {
+                                    // Upvalue из родительской области видимости
+                                    newUpvalues[i] = upvalues[nextInstr.B];
+                                }
                             }
-                            else if (nextInstr.OpCode == OpCode.OP_GETUPVAL)
+                            
+                            var newFunc = new LuaFunction
                             {
-                                newUpvalues[i] = upvalues[nextInstr.A];
-                            }
+                                Prototype = closure.Prototype,
+                                Upvalues = newUpvalues,
+                                Name = closure.Name
+                            };
+                            frame.Registers[a] = LuaValue.CreateFunction(newFunc);
                         }
-                        
-                        var newFunc = new LuaFunction
-                        {
-                            Prototype = closure.Prototype,
-                            Upvalues = newUpvalues,
-                            Name = closure.Name
-                        };
-                        frame.Registers[a] = LuaValue.CreateFunction(newFunc);
                         break;
 
                     case OpCode.OP_VARARG:
@@ -480,9 +542,9 @@ namespace Lua51Net.VM
             }
         }
 
-        private void ExecuteCall(int funcIndex, int nargs, int nresults)
+        private void ExecuteCall(CallFrame frame, int funcIndex, int nargs, int nresults)
         {
-            LuaValue func = CurrentFrame.Registers[funcIndex];
+            LuaValue func = frame.Registers[funcIndex];
             
             if (func.Type != LuaType.LUA_TFUNCTION)
                 throw new LuaException("Attempt to call non-function");
@@ -492,17 +554,25 @@ namespace Lua51Net.VM
             // Перемещение аргументов на стек состояния
             for (int i = 0; i < nargs; i++)
             {
-                _state.Push(CurrentFrame.Registers[funcIndex + 1 + i]);
+                _state.Push(frame.Registers[funcIndex + 1 + i]);
             }
 
             if (luaFunc.IsNative)
             {
                 int results = luaFunc.NativeFunc(_state);
                 
-                // Получение результатов со стека
-                for (int i = 0; i < results && i < nresults; i++)
+                // Получение результатов со стека и размещение в регистрах
+                for (int i = 0; i < results && (nresults < 0 || i < nresults); i++)
                 {
-                    CurrentFrame.Registers[funcIndex + i] = _state.Pop();
+                    frame.Registers[funcIndex + i] = _state.Pop();
+                }
+                // Если результатов меньше чем требуется, заполняем nil
+                if (nresults >= 0)
+                {
+                    for (int i = results; i < nresults; i++)
+                    {
+                        frame.Registers[funcIndex + i] = LuaValue.Nil;
+                    }
                 }
             }
             else
@@ -512,26 +582,32 @@ namespace Lua51Net.VM
             }
         }
 
-        private void ExecuteTailCall(int funcIndex, int nargs)
+        private void ExecuteTailCall(CallFrame frame, int funcIndex, int nargs)
         {
             // Tail call оптимизация - заменяет текущий фрейм
-            LuaValue func = CurrentFrame.Registers[funcIndex];
+            LuaValue func = frame.Registers[funcIndex];
             
             if (func.Type != LuaType.LUA_TFUNCTION)
                 throw new LuaException("Attempt to call non-function");
 
             // Подготовка нового вызова
             PopCallFrame();
-            ExecuteCall(funcIndex, nargs, -1);
+            
+            // Восстанавливаем предыдущий фрейм для выполнения вызова
+            if (_frameIndex >= 0)
+            {
+                var callerFrame = CurrentFrame;
+                ExecuteCall(callerFrame, funcIndex, nargs, -1);
+            }
         }
 
-        private int DoReturn(int retBase, int retCount)
+        private int DoReturn(CallFrame frame, int retBase, int retCount)
         {
             // Сохранение возвращаемых значений
             LuaValue[] returns = new LuaValue[retCount];
             for (int i = 0; i < retCount; i++)
             {
-                returns[i] = CurrentFrame.Registers[retBase + i];
+                returns[i] = frame.Registers[retBase + i];
             }
 
             PopCallFrame();
