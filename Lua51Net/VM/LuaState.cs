@@ -53,6 +53,7 @@ namespace Lua51Net.VM
             Libraries.IOLib.Register(this);
             Libraries.CoroutineLib.Register(this);
             Libraries.MathLib.Register(this);
+            Libraries.OsLib.Register(this);
         }
 
         #region Stack Operations

@@ -44,6 +44,12 @@
     <Compile Include="Core\LuaTypes.cs" />
     <Compile Include="VM\LuaState.cs" />
     <Compile Include="VM\LuaVM.cs" />
+    <Compile Include="VM\Libraries\StringLib.cs" />
+    <Compile Include="VM\Libraries\TableLib.cs" />
+    <Compile Include="VM\Libraries\IOLib.cs" />
+    <Compile Include="VM\Libraries\CoroutineLib.cs" />
+    <Compile Include="VM\Libraries\MathLib.cs" />
+    <Compile Include="VM\Libraries\OsLib.cs" />
     <Compile Include="Compiler\LuaLexer.cs" />
     <Compile Include="Compiler\LuaCompiler.cs" />
     <Compile Include="Api\LuaRuntime.cs" />
