@@ -1,5 +1,44 @@
+```
+# Build artifacts
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.snupkg
+
+# Dependencies
+packages/
 node_modules/
-.next/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test and coverage
+coverage/
+htmlcov/
+*.coverage
+.testcoverage
+
+# Temporary files
+*.tmp
+temp/
+```.next/
 dist/
 build/
-*.log
