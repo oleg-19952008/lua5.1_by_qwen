@@ -1,46 +1,33 @@
 ```
+# Compiled and build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+
 # Dependencies
 packages/
-*.nupkg
-*.snupkg
-
-# Build results
+lib/
 bin/
 obj/
-out/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
-# Environment
-.env
-.env.local
-*.env.*
+# Editors
+.vs/
+.idea/
+
+# Configuration
+app.config
+web.config
 
 # OS generated files
 .DS_Store
 Thumbs.db
-
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# Compiled files
-*.dll
-*.exe
-*.pdb
-*.so
-*.dylib
-*.class
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Package manager cache
-.nuget/
 ```

@@ -48,6 +48,7 @@ namespace Lua51Net.VM
         private void InitializeStandardLibs()
         {
             // Инициализация стандартных библиотек
+            Libraries.BaseLib.Register(this);
             Libraries.StringLib.Register(this);
             Libraries.TableLib.Register(this);
             Libraries.IOLib.Register(this);

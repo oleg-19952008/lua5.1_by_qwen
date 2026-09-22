@@ -159,6 +159,20 @@ namespace Lua51Net.Core
             }
         }
 
+        /// <summary>
+        /// Возвращает все записи таблицы для итерации
+        /// </summary>
+        public IEnumerable<KeyValuePair<LuaValue, LuaValue>> Entries
+        {
+            get
+            {
+                foreach (var kvp in _map)
+                    yield return kvp;
+                for (int i = 0; i < _array.Count; i++)
+                    yield return new KeyValuePair<LuaValue, LuaValue>(LuaValue.CreateNumber(i + 1), _array[i]);
+            }
+        }
+
         public void Clear()
         {
             _map.Clear();
