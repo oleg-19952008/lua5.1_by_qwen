@@ -22,7 +22,10 @@ namespace Lua51Net.VM
 
         private void InitializeStandardLibs()
         {
-            // Инициализация базовых библиотек будет добавлена в части 5
+            // Инициализация стандартных библиотек
+            Libraries.StringLib.Register(this);
+            Libraries.TableLib.Register(this);
+            Libraries.IOLib.Register(this);
         }
 
         #region Stack Operations
@@ -51,6 +54,11 @@ namespace Lua51Net.VM
             if (_stack.Count == 0)
                 return LuaValue.Nil;
             return _stack.Pop();
+        }
+
+        public void PushValue(int index)
+        {
+            Push(Get(index));
         }
 
         public LuaValue Get(int index)
@@ -264,6 +272,27 @@ namespace Lua51Net.VM
             var table = new LuaTable();
             _tables.Add(table);
             Push(LuaValue.CreateTable(table));
+        }
+
+        public void SetField(int index, string field)
+        {
+            LuaValue value = Get(-1); // Получаем значение с вершины стека
+            Pop(); // Удаляем значение из стека
+            PushString(field); // Ключ
+            Push(value); // Значение
+            SetTable(index);
+        }
+
+        public void GetMetaTable(int index)
+        {
+            // Упрощенная реализация - возвращает nil
+            PushNil();
+        }
+
+        public void GetField(int index, string field)
+        {
+            PushString(field);
+            GetTable(index);
         }
 
         public void GetTable(int index)
