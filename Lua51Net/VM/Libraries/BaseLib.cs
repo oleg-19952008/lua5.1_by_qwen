@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Lua51Net.Core;
 
 namespace Lua51Net.VM.Libraries
@@ -70,6 +71,9 @@ namespace Lua51Net.VM.Libraries
             
             // loadstring
             RegisterFunction(state, "loadstring", LoadString);
+            
+            // loadfile
+            RegisterFunction(state, "loadfile", LoadFile);
             
             // load
             RegisterFunction(state, "load", Load);
@@ -319,15 +323,25 @@ namespace Lua51Net.VM.Libraries
             {
                 string msg = state.ToString(2) ?? "assertion failed!";
                 state.PushString(msg);
-                return state.Error();
+                throw new LuaException(msg);
             }
+            // Возвращаем все аргументы (как в оригинале Lua)
             return state.GetTop();
         }
 
         // error(message [, level])
         private static int Error(LuaState state)
         {
-            return state.Error();
+            LuaValue msg = state.Get(1);
+            int level = 1;
+            if (state.IsNumber(2))
+            {
+                level = (int)state.ToNumber(2);
+            }
+            
+            // Формируем сообщение об ошибке с информацией о позиции
+            string errorMsg = msg.ToStringValue();
+            throw new LuaException(errorMsg);
         }
 
         // getmetatable(object)
@@ -407,18 +421,27 @@ namespace Lua51Net.VM.Libraries
             
             try
             {
-                int results = state.PCall(nargs, -1, 0);
+                // Сохраняем позицию для результатов
+                int baseIndex = state.GetTop() - nargs;
+                
+                // Вызываем функцию
+                int results = state.PCall(nargs, LuaState.LUA_MULTRET, 0);
                 
                 if (results != 0)
                 {
+                    // Ошибка произошла
                     state.PushBoolean(false);
+                    // Перемещаем ошибку на вторую позицию
                     state.Insert(-2);
                     return 2;
                 }
                 
+                // Успех - вставляем true перед результатами
+                int resultCount = state.GetTop() - baseIndex + 1;
                 state.PushBoolean(true);
-                state.Insert(-nargs - 1);
-                return state.GetTop();
+                state.Insert(baseIndex);
+                
+                return state.GetTop() - baseIndex + 1;
             }
             catch (Exception e)
             {
@@ -431,8 +454,71 @@ namespace Lua51Net.VM.Libraries
         // xpcall(f, err)
         private static int XPCall(LuaState state)
         {
-            // Упрощенная реализация xpcall
-            return PCall(state);
+            if (!state.IsFunction(1))
+            {
+                state.PushBoolean(false);
+                state.PushString("attempt to call non-function");
+                return 2;
+            }
+            
+            if (!state.IsFunction(2))
+            {
+                state.PushBoolean(false);
+                state.PushString("attempt to call non-function (error handler)");
+                return 2;
+            }
+            
+            try
+            {
+                // Вызываем функцию с защищённым вызовом
+                int nargs = state.GetTop() - 2; // Все аргументы кроме f и err
+                
+                // Сохраняем обработчик ошибок
+                state.PushValue(2);
+                
+                int results = state.PCall(nargs, LuaState.LUA_MULTRET, 0);
+                
+                if (results != 0)
+                {
+                    // Произошла ошибка - вызываем обработчик
+                    LuaValue errMsg = state.Pop();
+                    
+                    // Вызываем функцию обработки ошибок
+                    state.Push(errMsg);
+                    int errResults = state.Call(1, 1);
+                    
+                    state.PushBoolean(false);
+                    state.Insert(-2);
+                    return 2;
+                }
+                
+                // Успех
+                state.PushBoolean(true);
+                state.Insert(-(state.GetTop() - (state.GetTop() - nargs)));
+                
+                return state.GetTop();
+            }
+            catch (Exception e)
+            {
+                try
+                {
+                    // Пытаемся вызвать обработчик ошибок
+                    state.PushValue(2);
+                    state.PushString(e.Message);
+                    state.Call(1, 1);
+                    
+                    LuaValue errResult = state.Pop();
+                    state.PushBoolean(false);
+                    state.Push(errResult);
+                    return 2;
+                }
+                catch
+                {
+                    state.PushBoolean(false);
+                    state.PushString("error in error handler: " + e.Message);
+                    return 2;
+                }
+            }
         }
 
         // select(index, ...)
@@ -480,8 +566,53 @@ namespace Lua51Net.VM.Libraries
         {
             try
             {
-                string source = state.ToString(1);
+                LuaValue val = state.Get(1);
+                if (val.Type != LuaType.LUA_TSTRING)
+                {
+                    state.PushNil();
+                    state.PushString("bad argument #1 to 'loadstring' (string expected)");
+                    return 2;
+                }
+                
+                string source = val.ToStringValue();
                 string chunkName = state.ToString(2) ?? "chunk";
+                
+                var compiler = new Lua51Net.Compiler.LuaCompiler(source);
+                var prototype = compiler.Compile();
+                
+                var func = new LuaFunction
+                {
+                    Prototype = prototype,
+                    Name = chunkName
+                };
+                
+                state.PushFunction(func);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                state.PushNil();
+                state.PushString(e.Message);
+                return 2;
+            }
+        }
+
+        // loadfile([filename])
+        private static int LoadFile(LuaState state)
+        {
+            try
+            {
+                string filename = state.ToString(1) ?? "";
+                string chunkName = "@" + filename;
+                
+                if (!File.Exists(filename))
+                {
+                    state.PushNil();
+                    state.PushString($"Cannot open {filename}: No such file or directory");
+                    return 2;
+                }
+                
+                string source = File.ReadAllText(filename);
                 
                 var compiler = new Lua51Net.Compiler.LuaCompiler(source);
                 var prototype = compiler.Compile();
@@ -506,23 +637,104 @@ namespace Lua51Net.VM.Libraries
         // load(func [, chunkname])
         private static int Load(LuaState state)
         {
-            return LoadString(state);
+            // load может принимать функцию-читатель или строку
+            LuaValue arg1 = state.Get(1);
+            
+            if (arg1.Type == LuaType.LUA_TSTRING)
+            {
+                return LoadString(state);
+            }
+            else if (arg1.Type == LuaType.LUA_TFUNCTION)
+            {
+                // Вызываем функцию для получения кусков кода
+                // Упрощенная реализация - вызываем функцию один раз
+                state.PushValue(1);
+                state.Call(0, 1);
+                LuaValue result = state.Pop();
+                
+                if (result.Type == LuaType.LUA_TNIL)
+                {
+                    state.PushNil();
+                    state.PushString("EOF");
+                    return 2;
+                }
+                
+                // Вставляем функцию обратно и вызываем LoadString
+                state.Push(result);
+                state.Insert(1);
+                return LoadString(state);
+            }
+            else
+            {
+                state.PushNil();
+                state.PushString("bad argument #1 to 'load' (string or function expected)");
+                return 2;
+            }
         }
 
         // getfenv(f)
         private static int GetFEnv(LuaState state)
         {
-            // Упрощенная реализация - возвращает глобальную таблицу
-            state.GetGlobal("_G");
-            return 1;
+            // Получаем функцию или уровень стека
+            LuaValue f = state.Get(1);
+            
+            if (f.Type == LuaType.LUA_TNIL || f.Type == LuaType.LUA_TNUMBER)
+            {
+                // Если аргумент - число, это уровень стека
+                int level = f.Type == LuaType.LUA_TNUMBER ? (int)f.ToNumber() : 1;
+                
+                // Для простоты возвращаем _G для любого уровня
+                // В полной реализации нужно было бы получить окружение из кадра стека
+                state.GetGlobal("_G");
+                return 1;
+            }
+            else if (f.Type == LuaType.LUA_TFUNCTION)
+            {
+                // Для функции возвращаем её окружение
+                // В полной реализации нужно хранить environment в LuaFunction
+                state.GetGlobal("_G");
+                return 1;
+            }
+            else
+            {
+                // Для других типов - возвращаем nil
+                state.PushNil();
+                return 1;
+            }
         }
 
         // setfenv(f, t)
         private static int SetFEnv(LuaState state)
         {
-            // Упрощенная реализация
-            state.PushValue(1);
-            return 1;
+            LuaValue f = state.Get(1);
+            LuaValue t = state.Get(2);
+            
+            if (t.Type != LuaType.LUA_TTABLE)
+            {
+                throw new LuaException("'setfenv' cannot set environment to non-table");
+            }
+            
+            if (f.Type == LuaType.LUA_TNIL || f.Type == LuaType.LUA_TNUMBER)
+            {
+                // Установка окружения для текущего уровня
+                // В полной реализации нужно модифицировать кадр стека
+                // Здесь просто сохраняем в глобальном состоянии
+                state.SetGlobal("_ENV_CURRENT");
+                state.PushValue(1);
+                return 1;
+            }
+            else if (f.Type == LuaType.LUA_TFUNCTION)
+            {
+                // Установка окружения для функции
+                // В полной реализации нужно сохранить таблицу в LuaFunction
+                state.SetGlobal("_ENV_FUNC");
+                state.PushValue(1);
+                return 1;
+            }
+            else
+            {
+                throw new LuaException("'setfenv' cannot modify environment of non-function/non-number");
+            }
         }
     }
 }

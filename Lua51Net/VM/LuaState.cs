@@ -25,6 +25,7 @@ namespace Lua51Net.VM
         // Псевдо-индексы по спецификации Lua 5.1
         public const int GLOBALS_INDEX = -7;  // Псевдо-индекс для глобальной таблицы
         public const int REGISTRY_INDEX = -8; // Псевдо-индекс для реестра
+        public const int LUA_MULTRET = -1;    // Множественные возвращаемые значения
         
         private readonly Stack<LuaValue> _stack = new Stack<LuaValue>();
         private readonly List<LuaTable> _tables = new List<LuaTable>();
