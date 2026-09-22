@@ -46,12 +46,10 @@ namespace Lua51Net.VM.Libraries
             string s = state.ToString(1);
             if (s == null)
             {
-                state.PushNumber(0);
+                state.PushString("attempt to get length of nil value");
+                return state.Error();
             }
-            else
-            {
-                state.PushNumber(s.Length);
-            }
+            state.PushNumber(s.Length);
             return 1;
         }
 
@@ -64,7 +62,7 @@ namespace Lua51Net.VM.Libraries
             
             int start = PosRelAt(startDouble, len);
             if (start < 1) start = 1;
-            if (start > len) start = len + 1;
+            if (start > len + 1) start = len + 1;
             
             int end = len;
             if (state.GetTop() >= 3)
@@ -93,36 +91,72 @@ namespace Lua51Net.VM.Libraries
         // string.lower(s)
         private static int Lower(LuaState state)
         {
-            string s = state.ToString(1) ?? "";
-            state.PushString(s.ToLower());
+            string s = state.ToString(1);
+            if (s == null)
+            {
+                state.PushString("");
+                return 1;
+            }
+            // Lua lower/upper только для ASCII символов
+            char[] chars = s.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] >= 'A' && chars[i] <= 'Z')
+                    chars[i] = (char)(chars[i] + 32);
+            }
+            state.PushString(new string(chars));
             return 1;
         }
 
         // string.upper(s)
         private static int Upper(LuaState state)
         {
-            string s = state.ToString(1) ?? "";
-            state.PushString(s.ToUpper());
+            string s = state.ToString(1);
+            if (s == null)
+            {
+                state.PushString("");
+                return 1;
+            }
+            // Lua lower/upper только для ASCII символов
+            char[] chars = s.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] >= 'a' && chars[i] <= 'z')
+                    chars[i] = (char)(chars[i] - 32);
+            }
+            state.PushString(new string(chars));
             return 1;
         }
 
-        // string.rep(s, n [, sep])
+        // string.rep(s, n)
         private static int Rep(LuaState state)
         {
-            string s = state.ToString(1) ?? "";
-            int n = (int)state.ToNumber(2);
-            
-            string sep = "";
-            if (state.GetTop() >= 3)
+            string s = state.ToString(1);
+            if (s == null)
             {
-                sep = state.ToString(3) ?? "";
+                state.PushString("bad argument #1 to rep (string expected)");
+                return state.Error();
             }
             
-            StringBuilder sb = new StringBuilder();
+            double nDouble = state.ToNumber(2);
+            int n = (int)nDouble;
+            
+            // Проверка на отрицательное число
+            if (nDouble < 0)
+            {
+                state.PushString("");
+                return 1;
+            }
+            
+            if (n <= 0 || string.IsNullOrEmpty(s))
+            {
+                state.PushString("");
+                return 1;
+            }
+            
+            StringBuilder sb = new StringBuilder(s.Length * n);
             for (int i = 0; i < n; i++)
             {
-                if (i > 0 && !string.IsNullOrEmpty(sep))
-                    sb.Append(sep);
                 sb.Append(s);
             }
             
@@ -148,10 +182,25 @@ namespace Lua51Net.VM.Libraries
             
             for (int i = 1; i <= top; i++)
             {
-                int code = (int)state.ToNumber(i);
+                LuaValue val = state.Get(i);
+                if (val.Type != LuaType.LUA_TNUMBER)
+                {
+                    state.PushString($"string.char: bad argument #{i} to char (number expected, got {val.Type.ToString()})");
+                    return state.Error();
+                }
+                
+                double num = val.ToNumber();
+                // Проверка на NaN и infinity
+                if (double.IsNaN(num) || double.IsInfinity(num))
+                {
+                    state.PushString($"string.char: bad argument #{i} to char (number has no integer representation)");
+                    return state.Error();
+                }
+                
+                int code = (int)num;
                 if (code < 0 || code > 255)
                 {
-                    state.PushString($"string.char: bad argument #{i} to char (number out of range)");
+                    state.PushString($"string.char: bad argument #{i} to char (value out of range)");
                     return state.Error();
                 }
                 sb.Append((char)code);
@@ -164,7 +213,14 @@ namespace Lua51Net.VM.Libraries
         // string.byte(s [, i [, j]])
         private static int Byte(LuaState state)
         {
-            string s = state.ToString(1) ?? "";
+            LuaValue sVal = state.Get(1);
+            if (sVal.Type != LuaType.LUA_TSTRING && sVal.Type != LuaType.LUA_TNUMBER)
+            {
+                state.PushString("bad argument #1 to byte (string expected)");
+                return state.Error();
+            }
+            
+            string s = sVal.ToStringValue();
             int len = s.Length;
             
             int i = 1;
@@ -184,7 +240,7 @@ namespace Lua51Net.VM.Libraries
                 int count = j - i + 1;
                 for (int k = 0; k < count; k++)
                 {
-                    state.PushNumber(s[i - 1 + k]);
+                    state.PushNumber((double)s[i - 1 + k]);
                 }
                 return count;
             }
@@ -195,7 +251,7 @@ namespace Lua51Net.VM.Libraries
                     state.PushNil();
                     return 0;
                 }
-                state.PushNumber(s[i - 1]);
+                state.PushNumber((double)s[i - 1]);
                 return 1;
             }
         }
@@ -298,7 +354,13 @@ namespace Lua51Net.VM.Libraries
         // string.format(formatstring, ...)
         private static int Format(LuaState state)
         {
-            string format = state.ToString(1) ?? "";
+            string format = state.ToString(1);
+            if (format == null)
+            {
+                state.PushString("bad argument #1 to format (string expected)");
+                return state.Error();
+            }
+            
             StringBuilder result = new StringBuilder();
             int argIndex = 2;
             
@@ -309,55 +371,180 @@ namespace Lua51Net.VM.Libraries
                     i++;
                     if (i >= format.Length) break;
                     
+                    // Парсинг спецификатора формата Lua
+                    // Формат: %[flags][width][.precision]specifier
+                    
+                    int width = -1;
+                    int precision = -1;
+                    string flags = "";
+                    
+                    // Чтение флагов
+                    while (i < format.Length && "+-#0 ".IndexOf(format[i]) >= 0)
+                    {
+                        flags += format[i];
+                        i++;
+                    }
+                    
+                    // Чтение ширины
+                    if (i < format.Length && char.IsDigit(format[i]))
+                    {
+                        width = 0;
+                        while (i < format.Length && char.IsDigit(format[i]))
+                        {
+                            width = width * 10 + (format[i] - '0');
+                            i++;
+                        }
+                    }
+                    
+                    // Чтение точности
+                    if (i < format.Length && format[i] == '.')
+                    {
+                        i++;
+                        precision = 0;
+                        while (i < format.Length && char.IsDigit(format[i]))
+                        {
+                            precision = precision * 10 + (format[i] - '0');
+                            i++;
+                        }
+                    }
+                    
+                    if (i >= format.Length) break;
+                    
                     char specifier = format[i];
+                    
                     switch (specifier)
                     {
                         case '%':
                             result.Append('%');
                             break;
                         case 's':
-                            result.Append(state.ToString(argIndex++) ?? "nil");
+                        {
+                            string s = state.ToString(argIndex++);
+                            if (s == null) s = "nil";
+                            if (precision >= 0 && s.Length > precision)
+                                s = s.Substring(0, precision);
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(s.PadRight(width));
+                            else if (width > 0)
+                                result.Append(s.PadLeft(width));
+                            else
+                                result.Append(s);
                             break;
+                        }
                         case 'd':
                         case 'i':
-                            result.Append((long)state.ToNumber(argIndex++));
-                            break;
-                        case 'f':
-                            result.Append(state.ToNumber(argIndex++).ToString("F6"));
-                            break;
-                        case 'g':
-                            result.Append(state.ToNumber(argIndex++).ToString("G"));
-                            break;
-                        case 'e':
-                        case 'E':
-                            result.Append(state.ToNumber(argIndex++).ToString("E"));
-                            break;
-                        case 'c':
-                            result.Append((char)(int)state.ToNumber(argIndex++));
-                            break;
-                        case 'o':
-                            result.Append(Convert.ToString((int)state.ToNumber(argIndex++), 8));
-                            break;
-                        case 'x':
-                            result.Append(Convert.ToString((int)state.ToNumber(argIndex++), 16));
-                            break;
-                        case 'X':
-                            result.Append(Convert.ToString((int)state.ToNumber(argIndex++), 16).ToUpper());
-                            break;
-                        case 'q':
-                            string qs = state.ToString(argIndex++) ?? "";
-                            result.Append('"').Append(qs.Replace("\"", "\"\"")).Append('"');
-                            break;
-                        default:
-                            if (char.IsDigit(specifier))
-                            {
-                                // Обработка ширины поля (упрощенно)
-                                result.Append('%').Append(specifier);
-                            }
+                        {
+                            long num = (long)state.ToNumber(argIndex++);
+                            string numStr = num.ToString();
+                            if (precision >= 0 && precision > numStr.Length)
+                                numStr = numStr.PadLeft(precision, '0');
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
                             else
-                            {
-                                result.Append('%').Append(specifier);
-                            }
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'f':
+                        {
+                            double num = state.ToNumber(argIndex++);
+                            string numStr = precision >= 0 ? num.ToString($"F{precision}") : num.ToString("F6");
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'g':
+                        {
+                            double num = state.ToNumber(argIndex++);
+                            string numStr = precision >= 0 ? num.ToString($"G{precision}") : num.ToString("G");
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'e':
+                        {
+                            double num = state.ToNumber(argIndex++);
+                            string numStr = precision >= 0 ? num.ToString($"E{precision}") : num.ToString("E");
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'E':
+                        {
+                            double num = state.ToNumber(argIndex++);
+                            string numStr = precision >= 0 ? num.ToString($"E{precision}") : num.ToString("E");
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'c':
+                        {
+                            char c = (char)(int)state.ToNumber(argIndex++);
+                            result.Append(c);
+                            break;
+                        }
+                        case 'o':
+                        {
+                            int num = (int)state.ToNumber(argIndex++);
+                            string numStr = Convert.ToString(num, 8);
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'x':
+                        {
+                            int num = (int)state.ToNumber(argIndex++);
+                            string numStr = Convert.ToString(num, 16);
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'X':
+                        {
+                            int num = (int)state.ToNumber(argIndex++);
+                            string numStr = Convert.ToString(num, 16).ToUpper();
+                            if (width > 0 && flags.Contains("-"))
+                                result.Append(numStr.PadRight(width));
+                            else if (width > 0)
+                                result.Append(numStr.PadLeft(width));
+                            else
+                                result.Append(numStr);
+                            break;
+                        }
+                        case 'q':
+                        {
+                            string qs = state.ToString(argIndex++);
+                            if (qs == null) qs = "";
+                            result.Append('"').Append(qs.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n")).Append('"');
+                            break;
+                        }
+                        default:
+                            result.Append('%').Append(specifier);
                             break;
                     }
                 }
@@ -380,9 +567,9 @@ namespace Lua51Net.VM.Libraries
 
         private static int PosRelAt(double pos, int len)
         {
-            if (pos >= 0)
-                return (int)pos;
-            return len + (int)pos + 1;
+            if (pos < 0)
+                return len + (int)pos + 1;
+            return (int)pos;
         }
 
         private static string Replace(this string s, string oldValue, int maxCount, ref int count)
