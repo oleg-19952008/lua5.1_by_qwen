@@ -90,7 +90,7 @@ namespace Lua51Net.VM
                     case OpCode.OP_GETGLOBAL:
                         LuaValue globalName = constants[bx];
                         _state.Push(globalName);
-                        _state.GetTable((int)LuaType.LUA_TGLOBAL);
+                        _state.GetTable(LuaState.GLOBALS_INDEX);
                         frame.Registers[a] = _state.Pop();
                         break;
 
@@ -113,7 +113,7 @@ namespace Lua51Net.VM
                         LuaValue globalNameSet = constants[bx];
                         _state.Push(globalNameSet);
                         _state.Push(frame.Registers[a]);
-                        _state.SetTable((int)LuaType.LUA_TGLOBAL);
+                        _state.SetTable(LuaState.GLOBALS_INDEX);
                         break;
 
                     case OpCode.OP_SETUPVAL:

@@ -4,6 +4,9 @@ using System.Reflection;
 
 namespace Lua51Net.Core
 {
+    // Forward declaration reference to LuaState in VM namespace
+    using Lua51Net.VM;
+    
     /// <summary>
     /// Типы значений Lua 5.1
     /// </summary>
