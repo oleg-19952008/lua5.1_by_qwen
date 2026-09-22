@@ -15,6 +15,7 @@ namespace Lua51Net.Compiler
         private readonly List<Instruction> _instructions;
         private readonly List<LuaValue> _constants;
         private readonly List<LuaFunction> _functions;
+        private readonly List<int> _lineInfo;
         private int _lineNumber;
 
         public LuaCompiler(string source)
@@ -23,6 +24,7 @@ namespace Lua51Net.Compiler
             _instructions = new List<Instruction>();
             _constants = new List<LuaValue>();
             _functions = new List<LuaFunction>();
+            _lineInfo = new List<int>();
             _lineNumber = 1;
             NextToken();
         }
@@ -75,7 +77,7 @@ namespace Lua51Net.Compiler
             prototype.Code = _instructions.ToArray();
             prototype.Constants = _constants.ToArray();
             prototype.Functions = _functions.ToArray();
-            prototype.LineInfo = new int[prototype.Code.Length];
+            prototype.LineInfo = _lineInfo.ToArray();
 
             return prototype;
         }
@@ -144,7 +146,7 @@ namespace Lua51Net.Compiler
             Expect(TokenType.THEN);
 
             int jumpIfFalse = _instructions.Count;
-            Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1)); // Заглушка
+            Emit(Instruction.CreateABC(OpCode.OP_TEST, 0, 0, 1)); // Заглушка - проверяем условие
 
             ParseBlock();
 
@@ -152,13 +154,13 @@ namespace Lua51Net.Compiler
             if (Match(TokenType.ELSEIF))
             {
                 jumpToEnd = _instructions.Count;
-                Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1)); // Заглушка
+                Emit(Instruction.CreateABx(OpCode.OP_JMP, 0, 1)); // Заглушка
                 _instructions[jumpIfFalse] = Instruction.CreateABx(OpCode.OP_JMP, 0, _instructions.Count - jumpIfFalse - 1);
                 
                 ParseIf(); // Рекурсивно для elseif
                 
                 int finalJump = _instructions.Count;
-                Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1));
+                Emit(Instruction.CreateABx(OpCode.OP_JMP, 0, 1));
                 _instructions[jumpToEnd] = Instruction.CreateABx(OpCode.OP_JMP, 0, _instructions.Count - jumpToEnd - 1);
                 return;
             }
@@ -166,13 +168,13 @@ namespace Lua51Net.Compiler
             if (Match(TokenType.ELSE))
             {
                 jumpToEnd = _instructions.Count;
-                Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1)); // Заглушка
+                Emit(Instruction.CreateABx(OpCode.OP_JMP, 0, 1)); // Заглушка
                 _instructions[jumpIfFalse] = Instruction.CreateABx(OpCode.OP_JMP, 0, _instructions.Count - jumpIfFalse - 1);
                 
                 ParseBlock();
                 
                 int finalJump = _instructions.Count;
-                Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1));
+                Emit(Instruction.CreateABx(OpCode.OP_JMP, 0, 1));
                 _instructions[jumpToEnd] = Instruction.CreateABx(OpCode.OP_JMP, 0, _instructions.Count - jumpToEnd - 1);
             }
             else
@@ -191,7 +193,7 @@ namespace Lua51Net.Compiler
             ParseExpression(); // Условие
             
             int jumpIfFalse = _instructions.Count;
-            Emit(Instruction.Create(OpCode.OP_JMP, 0, 0, 1)); // Заглушка
+            Emit(Instruction.CreateABC(OpCode.OP_TEST, 0, 0, 1)); // Заглушка - проверяем условие
 
             ParseBlock();
             
@@ -214,8 +216,14 @@ namespace Lua51Net.Compiler
             ParseExpression(); // Start
             Expect(TokenType.COMMA);
             ParseExpression(); // Limit
-            Expect(TokenType.COMMA);
-            ParseExpression(); // Step
+            
+            // Step is optional - check if there's a comma or DO
+            int stepReg = 0;
+            if (_current.Type == TokenType.COMMA)
+            {
+                NextToken();
+                ParseExpression(); // Step
+            }
             
             Expect(TokenType.DO);
 
@@ -242,8 +250,16 @@ namespace Lua51Net.Compiler
             Expect(TokenType.UNTIL);
             ParseExpression(); // Условие
             
-            // Если условие ложно, прыгаем назад
+            // Если условие истинно, выходим (прыгаем вперед)
+            // Если ложно, продолжаем (падаем через) и прыгаем назад
+            int jumpIfTrue = _instructions.Count;
+            Emit(Instruction.CreateABC(OpCode.OP_TEST, 0, 0, 0)); // Заглушка - если истина, не прыгаем
+            
+            // Прыжок назад к началу repeat
             Emit(Instruction.CreateABx(OpCode.OP_JMP, 0, repeatStart - _instructions.Count - 1));
+            
+            // Исправляем тест - если истина, прыгаем вперед (после JMP)
+            _instructions[jumpIfTrue] = Instruction.CreateABC(OpCode.OP_TEST, 0, 0, 1);
         }
 
         private void ParseFunctionDef()
@@ -581,15 +597,16 @@ namespace Lua51Net.Compiler
             Emit(Instruction.CreateABx(OpCode.OP_CLOSURE, 0, funcIdx));
         }
 
+        private void Emit(Instruction instr)
+        {
+            _instructions.Add(instr);
+            _lineInfo.Add(_lineNumber);
+        }
+
         private int AddConstant(LuaValue value)
         {
             _constants.Add(value);
             return _constants.Count - 1;
-        }
-
-        private void Emit(Instruction instr)
-        {
-            _instructions.Add(instr);
         }
     }
 }

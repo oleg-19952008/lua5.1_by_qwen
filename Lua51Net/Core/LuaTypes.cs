@@ -421,6 +421,14 @@ namespace Lua51Net.Core
                 Value = (uint)((int)op | (a << 6) | ((bx & 0x3FFFF) << 16))
             };
         }
+
+        public static Instruction CreateABC(OpCode op, int a, int b, int c)
+        {
+            return new Instruction
+            {
+                Value = (uint)((int)op | (a << 6) | (b << 16) | (c << 25))
+            };
+        }
     }
 
     /// <summary>
