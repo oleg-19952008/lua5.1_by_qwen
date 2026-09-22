@@ -353,7 +353,6 @@ namespace Lua51Net.Api
         private int SetMetatable(LuaState state)
         {
             state.SetMetatable(1);
-            state.PushValue(1);
             return 1;
         }
 

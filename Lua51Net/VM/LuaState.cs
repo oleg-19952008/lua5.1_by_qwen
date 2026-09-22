@@ -457,17 +457,109 @@ namespace Lua51Net.VM
 
         private LuaTable _metatables = new LuaTable();
 
+        /// <summary>
+        /// Вспомогательный метод для получения метатаблицы значения
+        /// </summary>
+        private LuaTable GetMetatableFromValue(LuaValue value)
+        {
+            switch (value.Type)
+            {
+                case LuaType.LUA_TTABLE:
+                    LuaTable table = (LuaTable)value.Value;
+                    return table.Metatable;
+                    
+                case LuaType.LUA_TUSERDATA:
+                    // Для userdata метатаблица хранится отдельно в _metatables
+                    // Ключом является сам объект userdata
+                    LuaValue mtKey = value;
+                    if (_metatables[mtKey].Type != LuaType.LUA_TNIL)
+                    {
+                        return (LuaTable)_metatables[mtKey].Value;
+                    }
+                    return null;
+                    
+                default:
+                    // Для других типов (number, string, boolean, function, thread)
+                    // метатаблица хранится в глобальной таблице _metatables по ключу типа
+                    LuaValue typeKey = LuaValue.CreateString(value.Type.ToString());
+                    if (_metatables[typeKey].Type != LuaType.LUA_TNIL)
+                    {
+                        return (LuaTable)_metatables[typeKey].Value;
+                    }
+                    return null;
+            }
+        }
+
         public void GetMetatable(int index)
         {
             LuaValue value = Get(index);
-            // Упрощенная реализация
-            PushNil();
+            
+            LuaTable metatable = GetMetatableFromValue(value);
+            
+            if (metatable != null)
+            {
+                Push(LuaValue.CreateTable(metatable));
+            }
+            else
+            {
+                PushNil();
+            }
         }
 
-        public void SetMetatable(int index)
+        public int SetMetatable(int index)
         {
             LuaValue mt = Pop();
-            // Упрощенная реализация
+            LuaValue value = Get(index);
+            
+            if (mt.Type == LuaType.LUA_TNIL || mt.Type == LuaType.LUA_TTABLE)
+            {
+                switch (value.Type)
+                {
+                    case LuaType.LUA_TTABLE:
+                        LuaTable table = (LuaTable)value.Value;
+                        if (mt.Type == LuaType.LUA_TTABLE)
+                        {
+                            table.Metatable = (LuaTable)mt.Value;
+                        }
+                        else
+                        {
+                            table.Metatable = null;
+                        }
+                        break;
+                        
+                    case LuaType.LUA_TUSERDATA:
+                        // Для userdata метатаблица хранится отдельно в _metatables
+                        if (mt.Type == LuaType.LUA_TTABLE)
+                        {
+                            _metatables[value] = mt;
+                        }
+                        else
+                        {
+                            _metatables[value] = LuaValue.Nil;
+                        }
+                        break;
+                        
+                    default:
+                        // Для других типов метатаблица хранится в глобальной таблице
+                        LuaValue typeKey = LuaValue.CreateString(value.Type.ToString());
+                        if (mt.Type == LuaType.LUA_TTABLE)
+                        {
+                            _metatables[typeKey] = mt;
+                        }
+                        else
+                        {
+                            _metatables[typeKey] = LuaValue.Nil;
+                        }
+                        break;
+                }
+            }
+            else
+            {
+                throw new LuaException("metatable must be a table or nil");
+            }
+            
+            // Возвращаем this (для цепочки вызовов)
+            return 1;
         }
 
         #endregion

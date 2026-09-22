@@ -95,6 +95,16 @@ namespace Lua51Net.Core
     {
         private readonly Dictionary<LuaValue, LuaValue> _map = new Dictionary<LuaValue, LuaValue>();
         private readonly List<LuaValue> _array = new List<LuaValue>();
+        private LuaTable _metatable;
+
+        /// <summary>
+        /// Мета-таблица для этой таблицы
+        /// </summary>
+        public LuaTable Metatable
+        {
+            get => _metatable;
+            set => _metatable = value;
+        }
 
         public LuaValue this[LuaValue key]
         {
