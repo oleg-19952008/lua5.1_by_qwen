@@ -1,12 +1,12 @@
-# Compiled and build artifacts
-*.dll
-*.exe
-*.pdb
+```
+# Build artifacts
+*.o
 *.obj
-*.lib
+*.exe
+*.dll
 *.so
-*.dylib
 *.a
+*.out
 
 # Dependencies
 packages/
@@ -14,236 +14,30 @@ lib/
 bin/
 obj/
 
-# Logs and temp files
+# Logs
 *.log
+
+# Temp files
 *.tmp
 *.temp
-*.cache
 
-# Environment
-.env
-.env.local
-.env.*
-
-# Editors
+# IDE
 .vs/
-.vshost.exe
-.userprefs
-.userosscache
-.usersuitemetadata
-
-# OS generated files
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-desktop.ini
-
-# Backup files
-*~
-*.bak
-*.swp
-
-# Build outputs
-Debug/
-Release/
-x64/
-x86/
-build/
-dist/
-
-# Test results
-TestResults/
-
-# NuGet packages
-*.nupkg
-packages.lock.json
-
-# Visual Studio Code
 .vscode/
-
-# ReSharper
-_ReSharper*/
-*.[Rr]e[Ss]harper
-*.DotSettings.user
-
-# Visual Studio
-*.user
-*.userosscache
-*.suo
-*.csproj.user
-*.vbproj.user
-*.fsproj.user
+.idea/
 *.userprefs
 
-# Mono
-mono_crash.*
+# OS
+.DS_Store
+Thumbs.db
 
-# Coverlet coverage reports
-coverage.*
-*.coveragexml
+# Configuration
+app.config
+web.config
 
-# Benchmark Results
-BenchmarkDotNet.Artifacts/
-
-# .NET Core
-core
-*.app.config
-*.exe.config
-
-# Publish outputs
-publish/
-**/publish/
-
-# Microsoft SQL Server Compact files
-*.sdf
-
-# Windows Media Player files
-*.wmv
-
-# Project files
-*.pidb
-*.aps
-*.ncb
-*.opendb
-*.opensdf
-*.sln.docstates
-*.suo
-*.user
-*.userosscache
-*.sln.cache
-*.vcxproj.filters
-*.vcproj.*
-*.vcproj.*.*
-*.vcproj.*.*.*
-*.vcproj.*.*.*.*
-*.vcproj.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*......*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*......*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*.*
-*.vcproj.*.*.*.*.*.*.*.*......
+# Output directories typically used in .NET projects
+Debug/
+Release/
+bin/
+obj/
+```

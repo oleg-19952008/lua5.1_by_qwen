@@ -22,6 +22,10 @@ namespace Lua51Net.VM
     /// </summary>
     public class LuaState
     {
+        // Псевдо-индексы по спецификации Lua 5.1
+        public const int GLOBALS_INDEX = -7;  // Псевдо-индекс для глобальной таблицы
+        public const int REGISTRY_INDEX = -8; // Псевдо-индекс для реестра
+        
         private readonly Stack<LuaValue> _stack = new Stack<LuaValue>();
         private readonly List<LuaTable> _tables = new List<LuaTable>();
         private LuaTable _globals;
@@ -345,6 +349,14 @@ namespace Lua51Net.VM
         public void GetTable(int index)
         {
             LuaValue key = Pop();
+            
+            // Проверка на псевдо-индекс для глобальной таблицы
+            if (index == GLOBALS_INDEX)
+            {
+                Push(_globals[key]);
+                return;
+            }
+            
             LuaValue table = Get(index);
             
             if (table.Type != LuaType.LUA_TTABLE)
@@ -361,6 +373,14 @@ namespace Lua51Net.VM
         {
             LuaValue value = Pop();
             LuaValue key = Pop();
+            
+            // Проверка на псевдо-индекс для глобальной таблицы
+            if (index == GLOBALS_INDEX)
+            {
+                _globals[key] = value;
+                return;
+            }
+
             LuaValue table = Get(index);
 
             if (table.Type != LuaType.LUA_TTABLE)
@@ -416,10 +436,8 @@ namespace Lua51Net.VM
 
         public void GetGlobal(string name)
         {
-            Push(LuaValue.CreateString(name));
-            Push(LuaValue.Nil); // Placeholder для таблицы global
-            GetTable(-2);
-            Remove(-2);
+            LuaValue key = LuaValue.CreateString(name);
+            Push(_globals[key]);
         }
 
         public void SetGlobal(string name)
