@@ -177,7 +177,7 @@ namespace Lua51Net.VM
 
                     case OpCode.OP_MOD:
                         frame.Registers[a] = ArithmeticOp(GetRKValue(frame, b), GetRKValue(frame, c),
-                            (x, y) => LuaValue.CreateNumber(x.ToNumber() % y.ToNumber()));
+                            (x, y) => LuaValue.CreateNumber(Math.Floor(x.ToNumber()) % Math.Floor(y.ToNumber())));
                         break;
 
                     case OpCode.OP_POW:
@@ -233,23 +233,29 @@ namespace Lua51Net.VM
                         LuaValue eqA = GetRKValue(frame, b);
                         LuaValue eqB = GetRKValue(frame, c);
                         bool eqResult = eqA == eqB;
-                        if ((b != 0) == eqResult)
+                        if (a != 0)
+                            eqResult = !eqResult;
+                        if (eqResult)
                             frame.PC++;
                         break;
 
                     case OpCode.OP_LT:
                         LuaValue ltA = GetRKValue(frame, b);
                         LuaValue ltB = GetRKValue(frame, c);
-                        bool ltResult = ltA.ToNumber() < ltB.ToNumber();
-                        if ((b != 0) == ltResult)
+                        bool ltResult = CompareValues(ltA, ltB) < 0;
+                        if (a != 0)
+                            ltResult = !ltResult;
+                        if (ltResult)
                             frame.PC++;
                         break;
 
                     case OpCode.OP_LE:
                         LuaValue leA = GetRKValue(frame, b);
                         LuaValue leB = GetRKValue(frame, c);
-                        bool leResult = leA.ToNumber() <= leB.ToNumber();
-                        if ((b != 0) == leResult)
+                        bool leResult = CompareValues(leA, leB) <= 0;
+                        if (a != 0)
+                            leResult = !leResult;
+                        if (leResult)
                             frame.PC++;
                         break;
 
@@ -426,6 +432,51 @@ namespace Lua51Net.VM
             catch
             {
                 throw new LuaException("Arithmetic error");
+            }
+        }
+
+        /// <summary>
+        /// Сравнение двух значений Lua.
+        /// Возвращает -1 если a < b, 0 если a == b, 1 если a > b
+        /// </summary>
+        private int CompareValues(LuaValue a, LuaValue b)
+        {
+            // Если типы разные, используем порядок типов
+            if (a.Type != b.Type)
+            {
+                return (int)a.Type - (int)b.Type;
+            }
+
+            switch (a.Type)
+            {
+                case LuaType.LUA_TNIL:
+                    return 0; // nil == nil
+
+                case LuaType.LUA_TBOOLEAN:
+                    bool ba = (bool)a.Value;
+                    bool bb = (bool)b.Value;
+                    return ba == bb ? 0 : (ba ? 1 : -1);
+
+                case LuaType.LUA_TNUMBER:
+                    double na = (double)a.Value;
+                    double nb = (double)b.Value;
+                    return na < nb ? -1 : (na > nb ? 1 : 0);
+
+                case LuaType.LUA_TSTRING:
+                    string sa = (string)a.Value;
+                    string sb = (string)b.Value;
+                    return string.CompareOrdinal(sa, sb);
+
+                case LuaType.LUA_TTABLE:
+                case LuaType.LUA_TFUNCTION:
+                case LuaType.LUA_TUSERDATA:
+                case LuaType.LUA_TTHREAD:
+                    // Для ссылочных типов сравниваем по ссылке
+                    return ReferenceEquals(a.Value, b.Value) ? 0 : 
+                           (ReferenceEquals(a.Value, null) ? -1 : 1);
+
+                default:
+                    return 0;
             }
         }
 
