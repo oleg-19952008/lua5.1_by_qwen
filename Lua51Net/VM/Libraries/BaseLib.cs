@@ -287,7 +287,7 @@ namespace Lua51Net.VM.Libraries
                 state.PushString("bad argument #1 to 'next' (table expected)");
                 return state.Error();
             }
-            
+
             LuaValue key;
             if (state.GetTop() >= 2)
             {
@@ -297,29 +297,9 @@ namespace Lua51Net.VM.Libraries
             {
                 key = LuaValue.Nil;
             }
-            
-            LuaValue nextKey = LuaValue.Nil;
-            LuaValue nextValue = LuaValue.Nil;
-            bool foundCurrent = false;
-            
-            foreach (var kvp in table.Entries)
-            {
-                if (!foundCurrent)
-                {
-                    if (kvp.Key == key || (key.Type == LuaType.LUA_TNIL))
-                    {
-                        foundCurrent = true;
-                    }
-                }
-                else
-                {
-                    nextKey = kvp.Key;
-                    nextValue = kvp.Value;
-                    break;
-                }
-            }
-            
-            if (nextKey.Type != LuaType.LUA_TNIL)
+
+            // Используем метод Next() из LuaTable для корректной итерации
+            if (table.Next(key, out LuaValue nextKey, out LuaValue nextValue))
             {
                 state.Push(nextKey);
                 state.Push(nextValue);

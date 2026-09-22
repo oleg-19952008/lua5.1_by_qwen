@@ -23,6 +23,7 @@ namespace Lua51Net.Core
 
     /// <summary>
     /// Базовое значение Lua
+    /// Реализует семантику сравнения по спецификации Lua 5.1
     /// </summary>
     public struct LuaValue : IEquatable<LuaValue>
     {
@@ -49,6 +50,7 @@ namespace Lua51Net.Core
 
         public bool ToBoolean()
         {
+            // По спецификации Lua 5.1: false и nil - ложные значения, все остальные - истинные
             if (Type == LuaType.LUA_TNIL) return false;
             if (Type == LuaType.LUA_TBOOLEAN) return (bool)Value;
             return true;
@@ -67,11 +69,47 @@ namespace Lua51Net.Core
             return Value?.ToString() ?? "nil";
         }
 
+        /// <summary>
+        /// Сравнение по спецификации Lua 5.1:
+        /// - nil сравнивается только с nil (равен)
+        /// - boolean сравнивается по значению
+        /// - number сравнивается по значению
+        /// - string сравнивается по содержимому
+        /// - table/function/userdata/thread сравниваются по ссылке (identity)
+        /// - lightuserdata сравнивается по указателю
+        /// - userdata могут иметь пользовательское равенство через __eq метаметод
+        /// </summary>
         public bool Equals(LuaValue other)
         {
             if (Type != other.Type) return false;
-            if (Type == LuaType.LUA_TNIL) return true;
-            return Equals(Value, other.Value);
+            
+            switch (Type)
+            {
+                case LuaType.LUA_TNIL:
+                    return true; // Все nil равны
+                    
+                case LuaType.LUA_TBOOLEAN:
+                    return (bool)Value == (bool)other.Value;
+                    
+                case LuaType.LUA_TNUMBER:
+                    return (double)Value == (double)other.Value;
+                    
+                case LuaType.LUA_TSTRING:
+                    return (string)Value == (string)other.Value;
+                    
+                case LuaType.LUA_TLIGHTUSERDATA:
+                    return (IntPtr)Value == (IntPtr)other.Value;
+                    
+                case LuaType.LUA_TTABLE:
+                case LuaType.LUA_TFUNCTION:
+                case LuaType.LUA_TUSERDATA:
+                case LuaType.LUA_TTHREAD:
+                    // Сравнение по ссылке (identity comparison)
+                    return ReferenceEquals(Value, other.Value);
+                    
+                default:
+                    return false;
+            }
         }
 
         public override bool Equals(object obj)
@@ -81,7 +119,16 @@ namespace Lua51Net.Core
 
         public override int GetHashCode()
         {
-            return Value?.GetHashCode() ?? 0;
+            if (Value == null) return 0;
+            
+            // Для ссылочных типов используем RuntimeHelpers.GetHashCode для identity hash
+            if (Type == LuaType.LUA_TTABLE || Type == LuaType.LUA_TFUNCTION || 
+                Type == LuaType.LUA_TUSERDATA || Type == LuaType.LUA_TTHREAD)
+            {
+                return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Value);
+            }
+            
+            return Value.GetHashCode();
         }
 
         public static bool operator ==(LuaValue left, LuaValue right) => left.Equals(right);
@@ -89,7 +136,9 @@ namespace Lua51Net.Core
     }
 
     /// <summary>
-    /// Таблица Lua (hash + array part)
+    /// Таблица Lua (гибридная array/hash структура по спецификации Lua 5.1)
+    /// Array part хранит значения с целочисленными ключами 1..N для эффективного доступа
+    /// Hash part хранит все остальные ключи
     /// </summary>
     public class LuaTable
     {
@@ -106,20 +155,47 @@ namespace Lua51Net.Core
             set => _metatable = value;
         }
 
+        /// <summary>
+        /// Индексатор для доступа к элементам таблицы
+        /// Реализует доступ к array part для положительных целых ключей
+        /// </summary>
         public LuaValue this[LuaValue key]
         {
             get
             {
+                // Проверка array part для положительных целых чисел
                 if (key.Type == LuaType.LUA_TNUMBER)
                 {
                     double num = key.ToNumber();
                     if (num >= 1 && num <= _array.Count && num == (int)num)
                         return _array[(int)num - 1];
                 }
-                return _map.TryGetValue(key, out var value) ? value : LuaValue.Nil;
+                
+                // Поиск в hash part
+                if (_map.TryGetValue(key, out var value))
+                    return value;
+                
+                // Если не найдено, проверяем метатаблицу (__index)
+                if (_metatable != null)
+                {
+                    LuaValue indexFunc = _metatable[LuaValue.CreateString("__index")];
+                    if (indexFunc.Type == LuaType.LUA_TTABLE)
+                    {
+                        return ((LuaTable)indexFunc.Value)[key];
+                    }
+                    else if (indexFunc.Type == LuaType.LUA_TFUNCTION)
+                    {
+                        // Вызов функции __index(table, key)
+                        // Эта логика должна обрабатываться на уровне VM
+                        // Здесь возвращаем nil
+                    }
+                }
+                
+                return LuaValue.Nil;
             }
             set
             {
+                // Запись в array part для положительных целых чисел
                 if (key.Type == LuaType.LUA_TNUMBER)
                 {
                     double num = key.ToNumber();
@@ -137,21 +213,114 @@ namespace Lua51Net.Core
                         return;
                     }
                 }
+                
+                // Запись в hash part
                 _map[key] = value;
             }
         }
 
-        public void Next(ref LuaValue key, out LuaValue value)
+        /// <summary>
+        /// Прямой доступ к raw value без учета метатаблицы
+        /// </summary>
+        public LuaValue RawGet(LuaValue key)
         {
-            // Реализация next() для итерации по таблице
-            value = LuaValue.Nil;
-            // Упрощенная версия - полная реализация сложнее
+            if (key.Type == LuaType.LUA_TNUMBER)
+            {
+                double num = key.ToNumber();
+                if (num >= 1 && num <= _array.Count && num == (int)num)
+                    return _array[(int)num - 1];
+            }
+            
+            if (_map.TryGetValue(key, out var value))
+                return value;
+            
+            return LuaValue.Nil;
         }
 
+        /// <summary>
+        /// Прямая запись без вызова метаметодов
+        /// </summary>
+        public void RawSet(LuaValue key, LuaValue value)
+        {
+            if (key.Type == LuaType.LUA_TNUMBER)
+            {
+                double num = key.ToNumber();
+                if (num >= 1 && num == (int)num)
+                {
+                    int index = (int)num;
+                    if (index <= _array.Count)
+                        _array[index - 1] = value;
+                    else
+                    {
+                        while (_array.Count < index)
+                            _array.Add(LuaValue.Nil);
+                        _array[index - 1] = value;
+                    }
+                    return;
+                }
+            }
+            _map[key] = value;
+        }
+
+        /// <summary>
+        /// Итерация next() по таблице согласно Lua 5.1 spec
+        /// Возвращает следующую пару ключ-значение после заданного ключа
+        /// </summary>
+        public bool Next(LuaValue currentKey, out LuaValue nextKey, out LuaValue nextValue)
+        {
+            nextKey = LuaValue.Nil;
+            nextValue = LuaValue.Nil;
+            
+            bool foundCurrent = currentKey.Type == LuaType.LUA_TNIL;
+            
+            // Сначала проходим по array part
+            for (int i = 0; i < _array.Count; i++)
+            {
+                LuaValue key = LuaValue.CreateNumber(i + 1);
+                LuaValue value = _array[i];
+                
+                if (!foundCurrent)
+                {
+                    if (key.Equals(currentKey))
+                        foundCurrent = true;
+                }
+                else
+                {
+                    nextKey = key;
+                    nextValue = value;
+                    return true;
+                }
+            }
+            
+            // Затем проходим по hash part
+            foreach (var kvp in _map)
+            {
+                if (!foundCurrent)
+                {
+                    if (kvp.Key.Equals(currentKey))
+                        foundCurrent = true;
+                }
+                else
+                {
+                    nextKey = kvp.Key;
+                    nextValue = kvp.Value;
+                    return true;
+                }
+            }
+            
+            return false; // Конец итерации
+        }
+
+        /// <summary>
+        /// Длина таблицы (# оператор)
+        /// Согласно Lua 5.1: длина массива - это наибольший положительный целый индекс n
+        /// такой что table[n] не nil и table[n+1] nil
+        /// </summary>
         public int Length
         {
             get
             {
+                // Проверяем только array part
                 int len = _array.Count;
                 while (len > 0 && _array[len - 1].Type == LuaType.LUA_TNIL)
                     len--;
@@ -166,17 +335,39 @@ namespace Lua51Net.Core
         {
             get
             {
+                // Сначала array part
+                for (int i = 0; i < _array.Count; i++)
+                {
+                    yield return new KeyValuePair<LuaValue, LuaValue>(LuaValue.CreateNumber(i + 1), _array[i]);
+                }
+                // Затем hash part
                 foreach (var kvp in _map)
                     yield return kvp;
-                for (int i = 0; i < _array.Count; i++)
-                    yield return new KeyValuePair<LuaValue, LuaValue>(LuaValue.CreateNumber(i + 1), _array[i]);
             }
         }
 
+        /// <summary>
+        /// Очистка таблицы
+        /// </summary>
         public void Clear()
         {
             _map.Clear();
             _array.Clear();
+            _metatable = null;
+        }
+        
+        /// <summary>
+        /// Проверка наличия ключа в таблице (без учета метатаблицы)
+        /// </summary>
+        public bool ContainsKey(LuaValue key)
+        {
+            if (key.Type == LuaType.LUA_TNUMBER)
+            {
+                double num = key.ToNumber();
+                if (num >= 1 && num <= _array.Count && num == (int)num)
+                    return _array[(int)num - 1].Type != LuaType.LUA_TNIL;
+            }
+            return _map.ContainsKey(key);
         }
     }
 
